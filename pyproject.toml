@@ -5,6 +5,7 @@ description = "Consultor de APIs Python offline con Ollama y RAG"
 requires-python = ">=3.12"
 dependencies = [
     "ollama>=0.5.1",
+    "rich>=13",
     "sqlite-vec>=0.1.6",
 ]
 

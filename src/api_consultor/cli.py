@@ -11,6 +11,7 @@ from .consultor import Consultor
 from .docs import collect, extract_doc_chunks
 from .indexer import extract_chunks
 from .llm import embed
+from .render import stream_markdown
 from .store import Chunk, Store
 
 BATCH_SIZE = 32
@@ -67,9 +68,7 @@ def _ask(question: str | None) -> None:
     with Store(SETTINGS.db_path, SETTINGS.embed_dim) as store:
         consultor = Consultor(store)
         for text in questions:
-            for token in consultor.ask(text):
-                print(token, end="", flush=True)
-            print()
+            stream_markdown(consultor.ask(text))
 
 
 def main(argv: Sequence[str] | None = None) -> None:

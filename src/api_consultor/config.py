@@ -12,6 +12,7 @@ class Settings:
     db_path: Path = Path("data/consultor.db")
     docs_dir: Path = Path("docs")
     top_k: int = 5
+    console_width: int = 90  # ancho máximo de la salida en consola
 
 
 SETTINGS = Settings()
