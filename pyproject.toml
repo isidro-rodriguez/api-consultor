@@ -1,0 +1,26 @@
+[project]
+name = "api-consultor"
+version = "0.1.0"
+description = "Consultor de APIs Python offline con Ollama y RAG"
+requires-python = ">=3.12"
+dependencies = [
+    "ollama>=0.5.1",
+    "sqlite-vec>=0.1.6",
+]
+
+[project.scripts]
+api = "api_consultor.cli:main"
+
+[dependency-groups]
+dev = [
+    "rich>=15.0.0",
+    "ruff",
+    "typer>=0.27.3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

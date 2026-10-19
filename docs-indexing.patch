@@ -1,0 +1,257 @@
+diff --git a/src/api_consultor/cli.py b/src/api_consultor/cli.py
+index 4f2d377..13e8728 100644
+--- a/src/api_consultor/cli.py
++++ b/src/api_consultor/cli.py
+@@ -4,16 +4,31 @@ import argparse
+ import logging
+ import sys
+ from collections.abc import Iterator, Sequence
++from pathlib import Path
+ 
+ from .config import SETTINGS
+ from .consultor import Consultor
++from .docs import collect, extract_doc_chunks
+ from .indexer import extract_chunks
+ from .llm import embed
+-from .store import Store
++from .store import Chunk, Store
+ 
+ BATCH_SIZE = 32
+ 
+ 
++def _save(store: Store, package: str, chunks: Sequence[Chunk]) -> None:
++    if not chunks:
++        print(f"{package}: nada indexable", file=sys.stderr)
++        return
++    embeddings: list[list[float]] = []
++    for start in range(0, len(chunks), BATCH_SIZE):
++        batch = chunks[start : start + BATCH_SIZE]
++        embeddings.extend(embed([chunk.content for chunk in batch]))
++        print(f"\r{package}: {len(embeddings)}/{len(chunks)}", end="", flush=True)
++    print()
++    store.replace(package, chunks, embeddings)
++
++
+ def _index(packages: Sequence[str]) -> None:
+     with Store(SETTINGS.db_path, SETTINGS.embed_dim) as store:
+         for package in packages:
+@@ -22,12 +37,16 @@ def _index(packages: Sequence[str]) -> None:
+             except ModuleNotFoundError:
+                 print(f"{package}: no está instalado en el entorno", file=sys.stderr)
+                 continue
+-            print(f"{package}: {len(chunks)} fragmentos, generando embeddings...")
+-            embeddings: list[list[float]] = []
+-            for start in range(0, len(chunks), BATCH_SIZE):
+-                batch = chunks[start : start + BATCH_SIZE]
+-                embeddings.extend(embed([chunk.content for chunk in batch]))
+-            store.replace(package, chunks, embeddings)
++            _save(store, package, chunks)
++
++
++def _index_docs(directory: Path, exclude: Sequence[str]) -> None:
++    if not directory.is_dir():
++        print(f"{directory}: no existe el directorio", file=sys.stderr)
++        return
++    with Store(SETTINGS.db_path, SETTINGS.embed_dim) as store:
++        for source, files in collect(directory).items():
++            _save(store, source, extract_doc_chunks(source, files, exclude))
+ 
+ 
+ def _read_questions() -> Iterator[str]:
+@@ -58,8 +77,23 @@ def main(argv: Sequence[str] | None = None) -> None:
+         prog="api-consultor", description="Consultor de APIs Python offline."
+     )
+     sub = parser.add_subparsers(dest="command", required=True)
++
+     index = sub.add_parser("index", help="indexa paquetes instalados en el entorno")
+     index.add_argument("packages", nargs="+")
++
++    docs = sub.add_parser(
++        "index-docs", help="indexa documentación local (.txt, .md, .rst, .zip)"
++    )
++    docs.add_argument("directory", nargs="?", type=Path, default=SETTINGS.docs_dir)
++    docs.add_argument(
++        "-x",
++        "--exclude",
++        action="append",
++        default=[],
++        metavar="PATRÓN",
++        help="patrón fnmatch de ruta a omitir (repetible), p. ej. 'whatsnew/*'",
++    )
++
+     ask = sub.add_parser("ask", help="consulta; sin pregunta, modo interactivo")
+     ask.add_argument("question", nargs="?")
+     args = parser.parse_args(argv)
+@@ -67,5 +101,7 @@ def main(argv: Sequence[str] | None = None) -> None:
+     logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
+     if args.command == "index":
+         _index(args.packages)
++    elif args.command == "index-docs":
++        _index_docs(args.directory, args.exclude)
+     else:
+         _ask(args.question)
+diff --git a/src/api_consultor/config.py b/src/api_consultor/config.py
+index 5e61db2..9410030 100644
+--- a/src/api_consultor/config.py
++++ b/src/api_consultor/config.py
+@@ -10,6 +10,7 @@ class Settings:
+     embed_model: str = "bge-m3"
+     embed_dim: int = 1024  # dimensión de bge-m3; cámbiala si cambias de modelo
+     db_path: Path = Path("data/consultor.db")
++    docs_dir: Path = Path("docs")
+     top_k: int = 5
+ 
+ 
+diff --git a/src/api_consultor/docs.py b/src/api_consultor/docs.py
+new file mode 100644
+index 0000000..021753f
+--- /dev/null
++++ b/src/api_consultor/docs.py
+@@ -0,0 +1,147 @@
++"""Indexado de documentación local: .txt, .md y .rst, sueltos, en carpetas o en .zip."""
++
++import re
++import zipfile
++from collections import Counter
++from collections.abc import Iterator, Sequence
++from fnmatch import fnmatch
++from pathlib import Path
++
++from .store import Chunk
++
++SUFFIXES = frozenset({".txt", ".md", ".rst"})
++CHUNK_CHARS = 1500  # ~400 tokens: 5 fragmentos caben de sobra en 8k de contexto
++
++# Encabezados estilo Setext (rst, Sphinx text, Markdown) y ATX (Markdown).
++_SETEXT = re.compile(r'^([=\-*^~"+`#])\1{2,}\s*$')
++_ATX = re.compile(r"^#{1,6}\s+(\S.*?)\s*#*\s*$")
++_VERSION = re.compile(r"\d+(?:\.\d+)+")
++
++type Files = list[tuple[str, str]]  # (ruta relativa, texto)
++
++
++def _decode(data: bytes) -> str:
++    return data.decode("utf-8", errors="replace")
++
++
++def _read_zip(path: Path) -> Files:
++    with zipfile.ZipFile(path) as zf:
++        names = sorted(n for n in zf.namelist() if not n.endswith("/"))
++        # Quita la carpeta raíz común (p. ej. python-3.15-docs-text/).
++        roots = {n.split("/", 1)[0] for n in names}
++        strip = len(roots) == 1 and all("/" in n for n in names)
++        return [
++            (n.split("/", 1)[1] if strip else n, _decode(zf.read(n)))
++            for n in names
++            if Path(n).suffix.lower() in SUFFIXES
++        ]
++
++
++def _read_dir(path: Path) -> Files:
++    return [
++        (file.relative_to(path).as_posix(), _decode(file.read_bytes()))
++        for file in sorted(path.rglob("*"))
++        if file.is_file() and file.suffix.lower() in SUFFIXES
++    ]
++
++
++def collect(docs_dir: Path) -> dict[str, Files]:
++    """Agrupa la documentación por fuente: un .zip o carpeta = una fuente.
++
++    Los ficheros sueltos de primer nivel forman la fuente "docs".
++    """
++    sources: dict[str, Files] = {}
++    loose: Files = []
++    for entry in sorted(docs_dir.iterdir()):
++        if entry.name.startswith("."):
++            continue
++        if entry.is_dir():
++            sources[entry.name] = _read_dir(entry)
++        elif entry.suffix.lower() == ".zip":
++            sources[entry.stem] = _read_zip(entry)
++        elif entry.suffix.lower() in SUFFIXES:
++            loose.append((entry.name, _decode(entry.read_bytes())))
++    if loose:
++        sources["docs"] = loose
++    return sources
++
++
++def _sections(text: str) -> Iterator[tuple[str, str]]:
++    """Divide un texto en (título, cuerpo) usando sus encabezados."""
++    lines = text.splitlines()
++    title, body = "", []
++    in_fence = False
++    i = 0
++    while i < len(lines):
++        line = lines[i]
++        if line.lstrip().startswith("```"):
++            in_fence = not in_fence
++        heading, step = None, 1
++        if not in_fence:
++            underline = lines[i + 1] if i + 1 < len(lines) else ""
++            if (
++                line.strip()
++                and not _SETEXT.match(line)
++                and _SETEXT.match(underline)
++                and len(underline.strip()) >= len(line.strip())
++            ):
++                heading, step = line.strip(), 2
++            elif match := _ATX.match(line):
++                heading = match.group(1)
++        if heading is None:
++            body.append(line)
++        else:
++            yield title, "\n".join(body)
++            title, body = heading, []
++        i += step
++    yield title, "\n".join(body)
++
++
++def _wrap(paragraph: str, limit: int) -> Iterator[str]:
++    """Parte un párrafo gigante (tablas, listados) por saltos de línea."""
++    while len(paragraph) > limit:
++        cut = paragraph.rfind("\n", 0, limit)
++        cut = cut if cut > 0 else limit
++        yield paragraph[:cut]
++        paragraph = paragraph[cut:].lstrip("\n")
++    yield paragraph
++
++
++def _split(body: str, limit: int) -> Iterator[str]:
++    """Agrupa párrafos hasta `limit` caracteres sin cortarlos."""
++    buffer: list[str] = []
++    size = 0
++    for paragraph in re.split(r"\n\s*\n", body):
++        if not paragraph.strip():
++            continue
++        for piece in _wrap(paragraph.strip("\n"), limit):
++            if buffer and size + len(piece) > limit:
++                yield "\n\n".join(buffer)
++                buffer, size = [], 0
++            buffer.append(piece)
++            size += len(piece) + 2
++    if buffer:
++        yield "\n\n".join(buffer)
++
++
++def extract_doc_chunks(
++    source: str, files: Files, exclude: Sequence[str] = ()
++) -> list[Chunk]:
++    """Un chunk por trozo de sección; `exclude` son patrones fnmatch de ruta."""
++    found = _VERSION.search(source)
++    version = found.group() if found else "desconocida"
++    chunks: list[Chunk] = []
++    for relpath, text in files:
++        if any(fnmatch(relpath, pattern) for pattern in exclude):
++            continue
++        counts: Counter[str] = Counter()
++        for title, body in _sections(text):
++            base = f"{relpath}#{title}" if title else relpath
++            for part in _split(body, CHUNK_CHARS):
++                counts[base] += (
++                    1  # etiquetas únicas: títulos repetidos o secciones largas
++                )
++                n = counts[base]
++                label = base if n == 1 else f"{base} [{n}]"
++                chunks.append(Chunk(label, source, version, f"{label}\n\n{part}"))
++    return chunks
