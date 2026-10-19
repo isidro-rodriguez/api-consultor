@@ -36,7 +36,7 @@ BATCH_SIZE = 32
 
 style_typer_help()
 app = typer.Typer(
-    name="api-consultor",
+    name="api",
     help="Consultor de APIs Python offline con Ollama y RAG.",
     no_args_is_help=True,
     add_completion=False,
@@ -207,7 +207,7 @@ def ask(
         if not store.sources():
             _fail(
                 "No hay nada indexado todavía.",
-                "Usa `api-consultor index <paquete>` o `api-consultor index-docs`.",
+                "Usa `api index <paquete>` o `api index-docs`.",
             )
         consultor = Consultor(store)
         questions: Sequence[str] | Iterator[str] = (
