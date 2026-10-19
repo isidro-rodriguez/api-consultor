@@ -1,0 +1,144 @@
+# ============================================================
+# .gitattributes canónico para proyectos Python
+# Basado en la plantilla oficial de GitHub + extras comunes.
+# https://github.com/python/cpython/blob/main/.gitattributes
+# ============================================================
+
+# ─── Normalización global de finales de línea ────────────────
+# Detecta automáticamente archivos de texto y normaliza a LF en el repo,
+# convirtiendo a nativo en el checkout. Evita el "CRLF hell" entre SO.
+* text=auto
+
+# ─── Código fuente Python ────────────────────────────────────
+# Fuerza LF (obligatorio en CI/CD, contenedores y Linux).
+# diff=python activa el driver de diff específico de Python
+# (mejores cabeceras de hunk y resaltado).
+*.py    text eol=lf diff=python
+*.pyi   text eol=lf diff=python
+*.pyx   text eol=lf diff=python
+*.pxd   text eol=lf diff=python
+*.py3   text eol=lf diff=python
+*.pyw   text eol=lf diff=python
+*.pyz   text eol=lf diff=python
+
+# ─── Scripts y shells ────────────────────────────────────────
+# Crítico: sin LF los scripts fallan en Linux/macOS.
+*.sh     text eol=lf
+*.bash   text eol=lf
+Makefile text eol=lf
+
+# ─── Archivos de configuración y documentación ───────────────
+# Normalizar a LF para consistencia entre plataformas.
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.toml   text eol=lf
+*.ini    text eol=lf
+*.cfg    text eol=lf
+*.json   text eol=lf
+*.md     text eol=lf
+*.rst    text eol=lf
+*.txt    text eol=lf
+LICENSE  text eol=lf
+*.cff    text eol=lf
+
+# ─── Archivos propios de Git ─────────────────────────────────
+# Algunos clientes Git tienen problemas con CRLF en archivos .git*.
+.gitignore    text eol=lf
+.gitattributes text eol=lf
+.gitmodules   text eol=lf
+
+# ─── Docker y CI/CD ──────────────────────────────────────────
+Dockerfile*          text eol=lf
+*.dockerfile         text eol=lf
+docker-compose*.yml  text eol=lf
+.dockerignore        text eol=lf
+.github/**/*         text eol=lf
+.pre-commit-config.yaml text eol=lf
+
+# ─── Notebooks ───────────────────────────────────────────────
+# Los .ipynb son JSON; se tratan como texto pero no se les fuerza
+# un eol concreto para no romper el formato interno.
+*.ipynb text
+
+# ─── Archivos binarios ───────────────────────────────────────
+# Marcar como binario evita que Git intente normalizar o hacer diff
+# de contenido que no es texto (previene corrupción).
+*.aif   binary
+*.aiff  binary
+*.au    binary
+*.bmp   binary
+*.exe   binary
+*.gif   binary
+*.ico   binary
+*.jpg   binary
+*.jpeg  binary
+*.png   binary
+*.pdf   binary
+*.sqlite3 binary
+*.db    binary
+
+# ─── Archivos binarios de Python ─────────────────────────────
+# Bytecode, pickles y similares. export-ignore evita que se incluyan
+# en sdists generados por setuptools/build.
+*.pyc     binary export-ignore
+*.pyo     binary export-ignore
+*.pyd     binary export-ignore
+*.p       binary
+*.pkl     binary
+*.pickle  binary
+
+# ─── Archivos generados ──────────────────────────────────────
+# Indica a GitHub Linguist que no cuente estos archivos como código
+# fuente propio (no inflan las estadísticas del repo).
+# Descomenta y ajusta según tu proyecto:
+# **/clinic/*.h  linguist-generated=true
+# Python/importlib.h linguist-generated=true
+# src/generated/**/*.py linguist-generated=true
+
+# ─── Atributos de GitHub Linguist ────────────────────────────
+# Asegura que los archivos Python se detecten correctamente
+# y que los notebooks se reconozcan como Python.
+*.py linguist-detectable=true
+*.ipynb linguist-detectable=true
+*.ipynb linguist-language=Python
+
+# ─── Whitespace (opcional) ───────────────────────────────────
+# Descomenta si quieres desactivar comprobaciones de whitespace
+# en Python (útil cuando el editor gestiona indentación virtual).
+# *.py -whitespace
+
+# ─── Export-ignore para sdists ───────────────────────────────
+# Excluye archivos de desarrollo del paquete distribuido.
+# Descomenta según tu estructura:
+# .github/*  export-ignore
+# .circleci/* export-ignore
+# ci/*        export-ignore
+# tests/*     export-ignore
+# docs/*      export-ignore
+# .coveragerc export-ignore
+# .pre-commit-config.yaml export-ignore
+# tox.ini     export-ignore
+# .mailmap    export-ignore
+
+# ─── Git LFS (opcional) ──────────────────────────────────────
+# Descomenta si usas Git Large File Storage para modelos,
+# datasets o artefactos pesados.
+# *.whl    filter=lfs diff=lfs merge=lfs -text
+# *.npy    filter=lfs diff=lfs merge=lfs -text
+# *.npz    filter=lfs diff=lfs merge=lfs -text
+# *.h5     filter=lfs diff=lfs merge=lfs -text
+# *.pt     filter=lfs diff=lfs merge=lfs -text
+# *.pth    filter=lfs diff=lfs merge=lfs -text
+# *.onnx   filter=lfs diff=lfs merge=lfs -text
+# *.zip    filter=lfs diff=lfs merge=lfs -text
+# *.tar.gz filter=lfs diff=lfs merge=lfs -text
+
+# ─── Notas ───────────────────────────────────────────────────
+# • Los lockfiles (poetry.lock, uv.lock, Pipfile.lock, pdm.lock)
+#   NO deben marcarse como binarios ni ignorarse; se versionan.
+# • .env se ignora en .gitignore, pero aquí no hace falta regla.
+# • .env.example sí se versiona y se normaliza como texto.
+# • Si usas pre-commit, añade .pre-commit-config.yaml con eol=lf.
+# • Si usas Hatch, añade .hatch/ a .gitignore, no aquí.
+# • Si usas Jupyter Book o Sphinx, marca docs/_build/ como
+#   linguist-vendored o generado.

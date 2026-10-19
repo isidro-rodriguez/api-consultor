@@ -1,4 +1,153 @@
-.venv/
-data/
-docs/
+# ============================================================
+# .gitignore canónico para proyectos Python
+# Basado en la plantilla oficial de GitHub + extras comunes.
+# https://github.com/github/gitignore/blob/main/Python.gitignore
+# ============================================================
+
+# ─── Bytecode y cachés de Python ─────────────────────────────
 __pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# ─── Empaquetado y distribución ──────────────────────────────
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Logs de instalación
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ─── Tests, cobertura y QA ───────────────────────────────────
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+.ruff_cache/
+.pylint.d/
+
+# ─── Entornos virtuales y gestores ───────────────────────────
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+__pypackages__/
+.pdm-python
+.pdm-build/
+.uv/
+
+# ─── Frameworks y herramientas ───────────────────────────────
+# Django
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+media/
+staticfiles/
+
+# Flask
+instance/
+.webassets-cache
+
+# Scrapy
+.scrapy
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Sphinx / MkDocs
+docs/_build/
+/site
+
+# Jupyter / IPython
+.ipynb_checkpoints/
+profile_default/
+ipython_config.py
+
+# Cython
+cython_debug/
+
+# SageMath
+*.sage.py
+
+# ─── Traducciones ────────────────────────────────────────────
+*.mo
+*.pot
+
+# ─── IDEs y editores ─────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.spyderproject
+.spyproject
+.ropeproject
+
+# ─── Sistemas operativos ─────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── Logs, bases de datos y locales ──────────────────────────
+logs/
+*.log
+*.sqlite3
+*.db
+*.local
+*.bak
+*.tmp
+
+# ─── Directorios privados ────────────────────────────────────
+docs/
+
+# ─── Agentes ─────────────────────────────────────────────────
+.kilo/
+
+# ─── Opcionales según stack ──────────────────────────────────
+# Si usas Poetry, NO ignores poetry.lock (debe versionarse).
+# Si usas Pipenv, NO ignores Pipfile.lock (debe versionarse).
+# Si usas uv, NO ignores uv.lock (debe versionarse).
+# Si usas PDM, NO ignores pdm.lock (debe versionarse).
+# Si usas Hatch, puedes añadir: .hatch/
+# Si usas direnv, puedes añadir: .direnv/ y .envrc
+# Si usas frontend dentro del repo, puedes añadir: node_modules/
+# Si compartes configuración de VS Code, elimina .vscode/ o ignora solo archivos locales.
+# Si tienes código fuente en lib/ o lib64/, NO añadas esas rutas.
