@@ -10,7 +10,7 @@ dependencies = [
 ]
 
 [project.scripts]
-api = "api_consultor.cli:main"
+api = "api_consultor.cli:app"
 
 [dependency-groups]
 dev = [

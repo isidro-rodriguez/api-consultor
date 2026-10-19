@@ -32,7 +32,7 @@ class Consultor:
         merged = {chunk.qualname: chunk for chunk in (*exact, *semantic)}
         return list(merged.values())[: SETTINGS.top_k]
 
-    def ask(self, question: str) -> Iterator[str]:
-        context = _format_context(self.retrieve(question))
-        content = f"{context}\n\nPregunta: {question}"
+    def stream(self, question: str, chunks: list[Chunk]) -> Iterator[str]:
+        """Genera la respuesta en streaming a partir de los fragmentos recuperados."""
+        content = f"{_format_context(chunks)}\n\nPregunta: {question}"
         yield from stream_chat([{"role": "user", "content": content}])

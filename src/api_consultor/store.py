@@ -18,6 +18,13 @@ class Chunk:
     content: str
 
 
+@dataclass(frozen=True, slots=True)
+class SourceInfo:
+    package: str
+    version: str
+    chunks: int
+
+
 _COLUMNS = "qualname, package, version, content"
 
 
@@ -78,6 +85,13 @@ class Store:
                     "INSERT INTO vec_chunks(rowid, embedding) VALUES (?, ?)",
                     (cur.lastrowid, sqlite_vec.serialize_float32(list(embedding))),
                 )
+
+    def sources(self) -> list[SourceInfo]:
+        rows = self._db.execute(
+            "SELECT package, version, COUNT(*) FROM chunks "
+            "GROUP BY package, version ORDER BY package"
+        )
+        return [SourceInfo(*row) for row in rows]
 
     def by_name(self, names: Iterable[str], limit_per_name: int = 2) -> list[Chunk]:
         """Coincidencia exacta con el nombre cualificado o con su sufijo."""
