@@ -26,16 +26,16 @@ declares terminada una tarea que no hayas ejecutado.
 
 ## Mapa del código (`src/api_consultor/`)
 
-| Módulo         | Responsabilidad                                                                 |
-| -------------- | ------------------------------------------------------------------------------- |
-| `cli.py`       | Comandos Typer, orquestación y errores de Ollama. Sin lógica de dominio.        |
-| `indexer.py`   | Extrae chunks de paquetes instalados (introspección con `inspect`).             |
-| `docs.py`      | Lee `.txt`/`.md`/`.rst` (sueltos, carpetas, `.zip`) y los trocea por secciones. |
-| `store.py`     | SQLite + `sqlite-vec`: `replace`, `by_name`, `search`, `sources`.               |
-| `consultor.py` | RAG: `retrieve()` (exacta + vectorial) y `stream()` (generación).               |
-| `llm.py`       | Capa fina sobre el cliente de Ollama (`embed`, `stream_chat`).                  |
-| `render.py`    | Toda la salida de consola: tema Monokai, Markdown, tablas, versión.             |
-| `config.py`    | `Settings` inmutable (modelos, rutas, `top_k`, ancho de consola).               |
+| Módulo         | Responsabilidad                                                                                      |
+| -------------- | ---------------------------------------------------------------------------------------------------- |
+| `cli.py`       | Comandos Typer, orquestación y errores de Ollama. Sin lógica de dominio.                             |
+| `indexer.py`   | Extrae chunks de paquetes instalados (introspección con `inspect`).                                  |
+| `docs.py`      | Lee `.txt`/`.md`/`.rst` (sueltos, carpetas, `.zip`) y los trocea por secciones.                      |
+| `store.py`     | SQLite + `sqlite-vec` + FTS5: `replace`, `by_name`, `by_short_name`, `lexical`, `search`, `sources`. |
+| `consultor.py` | RAG: `retrieve()` (nombres + FTS5 + vectorial, fusión RRF) y `stream()`.                             |
+| `llm.py`       | Capa fina sobre el cliente de Ollama (`embed`, `stream_chat`).                                       |
+| `render.py`    | Toda la salida de consola: tema Monokai, Markdown, tablas, versión.                                  |
+| `config.py`    | `Settings` inmutable (modelos, rutas, `top_k`, ancho de consola).                                    |
 
 Nada imprime fuera de `render.py`. `Modelfile` define el modelo `api-consultor`.
 
@@ -78,7 +78,7 @@ GPU de gama media (8 GB de VRAM) y unos 16 GB de RAM. Mantén compatible:
 
 - Ollama con un LLM de ~8B cuantizado (Qwen3 8B) y contexto de 8k tokens.
 - Embeddings ejecutables en CPU; nunca dos modelos grandes en GPU a la vez.
-- Contexto enviado al modelo moderado: unos 5 fragmentos de ~2000 caracteres.
+- Contexto enviado al modelo moderado: `retrieval_k` (5) fragmentos de ~2000 caracteres.
 
 No propongas modelos mayores sin medir que el cuello de botella es la generación y no
 la recuperación.

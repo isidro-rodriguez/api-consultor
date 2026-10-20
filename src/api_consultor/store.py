@@ -35,6 +35,12 @@ class Store:
         self._db.enable_load_extension(True)
         sqlite_vec.load(self._db)
         self._db.enable_load_extension(False)
+        had_fts = (
+            self._db.execute(
+                "SELECT 1 FROM sqlite_master WHERE name = 'chunks_fts'"
+            ).fetchone()
+            is not None
+        )
         self._db.executescript(f"""
             CREATE TABLE IF NOT EXISTS chunks (
                 id INTEGER PRIMARY KEY,
@@ -47,7 +53,16 @@ class Store:
             CREATE INDEX IF NOT EXISTS idx_chunks_qualname ON chunks(qualname);
             CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks
                 USING vec0(embedding float[{dim}]);
+            CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts
+                USING fts5(qualname, content,
+                           tokenize = "unicode61 remove_diacritics 2 tokenchars '_'");
         """)
+        if not had_fts:  # índice creado antes de la búsqueda léxica: migración
+            with self._db:
+                self._db.execute(
+                    "INSERT INTO chunks_fts(rowid, qualname, content) "
+                    "SELECT id, qualname, content FROM chunks"
+                )
 
     def __enter__(self) -> Self:
         return self
@@ -75,6 +90,7 @@ class Store:
                 )
             ]
             self._db.executemany("DELETE FROM vec_chunks WHERE rowid = ?", old_ids)
+            self._db.executemany("DELETE FROM chunks_fts WHERE rowid = ?", old_ids)
             self._db.execute("DELETE FROM chunks WHERE package = ?", (package,))
             for chunk, embedding in zip(chunks, embeddings, strict=True):
                 cur = self._db.execute(
@@ -84,6 +100,10 @@ class Store:
                 self._db.execute(
                     "INSERT INTO vec_chunks(rowid, embedding) VALUES (?, ?)",
                     (cur.lastrowid, sqlite_vec.serialize_float32(list(embedding))),
+                )
+                self._db.execute(
+                    "INSERT INTO chunks_fts(rowid, qualname, content) VALUES (?, ?, ?)",
+                    (cur.lastrowid, chunk.qualname, chunk.content),
                 )
 
     def sources(self) -> list[SourceInfo]:
@@ -107,6 +127,43 @@ class Store:
             )
             found.extend(Chunk(*row) for row in rows)
         return found
+
+    def by_short_name(self, names: Iterable[str], max_matches: int = 5) -> list[Chunk]:
+        """Símbolos cuyo último componente coincide (sin distinguir mayúsculas).
+
+        Un nombre que coincide con más de `max_matches` símbolos es demasiado genérico
+        para identificar uno y se ignora.
+        """
+        found: list[Chunk] = []
+        for name in dict.fromkeys(n.lower() for n in names):
+            rows = self._db.execute(
+                f"SELECT {_COLUMNS} FROM chunks WHERE lower(qualname) GLOB ? LIMIT ?",
+                (f"*.{name}", max_matches + 1),
+            ).fetchall()
+            if 0 < len(rows) <= max_matches:
+                found.extend(Chunk(*row) for row in rows)
+        return found
+
+    def lexical(self, query: str, limit: int) -> list[Chunk]:
+        """Búsqueda por palabras (FTS5, ranking BM25) con más peso en el nombre.
+
+        `query` usa la sintaxis de FTS5; si no es válida no se devuelve nada.
+        """
+        try:
+            rows = self._db.execute(
+                f"""
+                SELECT {", ".join("c." + col.strip() for col in _COLUMNS.split(","))}
+                FROM chunks_fts
+                JOIN chunks AS c ON c.id = chunks_fts.rowid
+                WHERE chunks_fts MATCH ?
+                ORDER BY bm25(chunks_fts, 5.0, 1.0)
+                LIMIT ?
+                """,
+                (query, limit),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return []
+        return [Chunk(*row) for row in rows]
 
     def search(self, embedding: Sequence[float], k: int) -> list[Chunk]:
         rows = self._db.execute(

@@ -81,6 +81,10 @@ Introducción general a la biblioteca.
 Para un mapa web conviene la proyección Mercator. Para medir áreas, una proyección
 equivalente.
 
+## Recorte de capas
+
+Para recortar una capa a una caja usa `clip_to_bbox(capa, caja)` antes de proyectar.
+
 ## Formatos de entrada y salida
 
 Geolib lee y escribe ficheros GeoJSON y también CSV con columnas de coordenadas.
@@ -114,10 +118,10 @@ def test_corpus_contains_expected_sources(corpus: Consultor) -> None:
 
 def test_global_retrieval_quality_does_not_regress(report: EvalReport) -> None:
     metrics = report.metrics()
-    assert metrics.cases == 9
-    assert metrics.recall[5] >= 0.9
-    assert metrics.recall[10] >= 0.9
-    assert metrics.mrr >= 0.8
+    assert metrics.cases == 10
+    assert metrics.recall[1] >= 0.9  # 'ambigua' tiene dos fuentes: R@1 máx. 0,95
+    assert metrics.recall[5] >= 0.95
+    assert metrics.mrr >= 0.95
 
 
 @pytest.mark.parametrize(
@@ -126,9 +130,11 @@ def test_global_retrieval_quality_does_not_regress(report: EvalReport) -> None:
         ("exacto", 1.0),
         ("cualificado-parcial", 1.0),
         ("snake_case", 1.0),
-        ("nombre-simple", 0.5),
-        ("descripcion", 0.5),
-        ("documentacion", 0.5),
+        ("nombre-simple", 1.0),
+        ("descripcion", 0.9),
+        ("documentacion", 0.9),
+        ("contenido-docs", 1.0),
+        ("ambigua", 0.9),
     ],
 )
 def test_per_category_floor(

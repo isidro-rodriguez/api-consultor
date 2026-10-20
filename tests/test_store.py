@@ -1,3 +1,4 @@
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -78,3 +79,90 @@ def test_sources_group_by_package_and_version(store: Store) -> None:
 def test_qualnames_lists_every_indexed_chunk(store: Store) -> None:
     store.replace("pkg", [chunk("pkg.a"), chunk("pkg.b")], [[1.0, 0, 0, 0]] * 2)
     assert sorted(store.qualnames()) == ["pkg.a", "pkg.b"]
+
+
+def test_lexical_finds_identifiers_and_weights_names_higher(store: Store) -> None:
+    store.replace(
+        "docs",
+        [
+            Chunk(
+                "a.md#Intro", "docs", "1", "lista larga: shutil.copytree entre otras"
+            ),
+            Chunk("shutil.copytree", "docs", "1", "def shutil.copytree(src, dst)"),
+            Chunk("otro", "docs", "1", "nada relevante aquí"),
+        ],
+        [[1.0, 0, 0, 0]] * 3,
+    )
+    names = [c.qualname for c in store.lexical('"copytree"', 10)]
+    assert names == ["shutil.copytree", "a.md#Intro"]
+
+
+def test_lexical_keeps_underscores_phrases_and_ignores_accents(store: Store) -> None:
+    store.replace(
+        "docs",
+        [
+            Chunk("a", "docs", "1", "Counter.most_common(n) devuelve los más comunes"),
+            Chunk("b", "docs", "1", "json.dumps(obj) serializa; most common words"),
+            Chunk("c", "docs", "1", "El área de un polígono"),
+        ],
+        [[1.0, 0, 0, 0]] * 3,
+    )
+    assert [c.qualname for c in store.lexical('"most_common"', 5)] == ["a"]
+    assert [c.qualname for c in store.lexical('"json dumps"', 5)] == ["b"]
+    assert [c.qualname for c in store.lexical('"area"', 5)] == ["c"]
+
+
+def test_lexical_returns_nothing_for_invalid_queries(store: Store) -> None:
+    store.replace("docs", [chunk("a")], [[1.0, 0, 0, 0]])
+    assert store.lexical("AND OR (", 5) == []
+    assert store.lexical('"', 5) == []
+
+
+def test_replace_keeps_the_lexical_index_in_sync(store: Store) -> None:
+    old = Chunk("a", "pkg", "1", "palabraantigua")
+    store.replace("pkg", [old], [[1.0, 0, 0, 0]])
+    new = Chunk("b", "pkg", "2", "palabranueva")
+    store.replace("pkg", [new], [[1.0, 0, 0, 0]])
+    assert store.lexical('"palabraantigua"', 5) == []
+    assert [c.qualname for c in store.lexical('"palabranueva"', 5)] == ["b"]
+
+
+def test_opening_an_index_without_fts_migrates_it(tmp_path: Path) -> None:
+    path = tmp_path / "old.db"
+    with Store(path, DIM) as first:
+        first.replace(
+            "pkg", [Chunk("a", "pkg", "1", "contenidoantiguo")], [[1.0, 0, 0, 0]]
+        )
+    legacy = sqlite3.connect(path)
+    legacy.execute(
+        "DROP TABLE chunks_fts"
+    )  # simula un índice anterior a la búsqueda léxica
+    legacy.commit()
+    legacy.close()
+    with Store(path, DIM) as migrated:
+        assert [c.qualname for c in migrated.lexical('"contenidoantiguo"', 5)] == ["a"]
+        assert migrated.sources() == [SourceInfo("pkg", "1", 1)]
+
+
+def test_by_short_name_matches_last_component_ignoring_case(store: Store) -> None:
+    store.replace(
+        "pkg",
+        [
+            chunk("pkg.geo.Haversine"),
+            chunk("pkg.geo.bearing"),
+            chunk("a.md#os.listdir"),
+        ],
+        [[1.0, 0, 0, 0]] * 3,
+    )
+    assert [c.qualname for c in store.by_short_name(["haversine"])] == [
+        "pkg.geo.Haversine"
+    ]
+    assert [c.qualname for c in store.by_short_name(["listdir"])] == ["a.md#os.listdir"]
+    assert store.by_short_name(["geo"]) == []  # solo el último componente
+
+
+def test_by_short_name_ignores_generic_names(store: Store) -> None:
+    names = [f"m{i}.get" for i in range(6)]
+    store.replace("pkg", [chunk(n) for n in names], [[1.0, 0, 0, 0]] * 6)
+    assert store.by_short_name(["get"], max_matches=5) == []
+    assert len(store.by_short_name(["get"], max_matches=6)) == 6

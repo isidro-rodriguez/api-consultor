@@ -11,7 +11,8 @@ class Settings:
     embed_dim: int = 1024  # dimensión de bge-m3; cámbiala si cambias de modelo
     db_path: Path = Path("data/consultor.db")
     docs_dir: Path = Path("docs")
-    top_k: int = 5
+    retrieval_k: int = 5  # fragmentos que se envían al modelo
+    retrieval_candidates: int = 30  # candidatos por método antes de fusionar
     console_width: int = 90  # ancho máximo de la salida en consola
 
 

@@ -13,13 +13,19 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   en TOML, con desglose por categoría y lista de fallos (`-v` para todos los casos).
 - Casos de ejemplo sobre la biblioteca estándar en `evals/stdlib.toml`.
 - Banco de regresión sintético (`tests/test_benchmark.py`) con suelos de calidad.
-
 - `api eval` avisa cuando las fuentes esperadas no están en el índice, y `expected`
   admite alternativas con `|` (API indexada o página de documentación).
 
 ### Cambiado
 
-- `Consultor.retrieve()` acepta un límite opcional `k` (por defecto, `top_k`).
+- `Consultor.retrieve()` acepta un límite opcional `k` (por defecto, `retrieval_k`).
+- Recuperación híbrida: a los nombres cualificados y la búsqueda vectorial se suman los
+  nombres cortos de símbolos (`rglob`) y una búsqueda por palabras sobre el contenido
+  (FTS5, BM25); las cuatro señales se fusionan con Reciprocal Rank Fusion sobre hasta
+  `retrieval_candidates` candidatos por método.
+- El índice se migra solo al abrirlo (se crea la tabla FTS5): no hace falta reindexar.
+- `top_k` pasa a llamarse `retrieval_k` en `Settings`, para no confundirlo con el
+  `top_k` de generación de Ollama, y se añade `retrieval_candidates`.
 
 ### Corregido
 

@@ -44,3 +44,8 @@ expected = ["geolib.shapes.Polygon.area", "geolib.shapes.Circle.area"]
 category = "documentacion"
 question = "¿Qué proyección elijo para un mapa web?"
 expected = ["guia.md#*"]
+
+[[case]]
+category = "contenido-docs"
+question = "¿Cómo funciona clip_to_bbox?"
+expected = ["guia.md#Recorte de capas"]

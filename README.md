@@ -8,7 +8,7 @@ responde preguntas con un LLM que corre en tu máquina mediante
 ```
 paquetes instalados / docs/ ──► fragmentos ──► embeddings (bge-m3) ──► SQLite + sqlite-vec
                                                                              │
-pregunta ──► búsqueda por nombre + vectorial ◄───────────────────────────────┘
+pregunta ──► nombres + palabras (FTS5) + vectorial ──► fusión RRF ◄──────────┘
                      │
                      └──► Qwen3 8B (Ollama) ──► respuesta en Markdown + fuentes
 ```
@@ -62,7 +62,8 @@ recuperación o el chunking. Ejecútalo con Ollama en marcha: usa el índice rea
 
 ## Configuración
 
-Modelos, ruta de la base, número de fragmentos (`top_k`) y ancho de consola están en
+Modelos, ruta de la base, fragmentos enviados al modelo (`retrieval_k`), candidatos
+por método (`retrieval_candidates`) y ancho de consola están en
 `src/api_consultor/config.py`. Los parámetros y el prompt del modelo, en `Modelfile`.
 
 ## Desarrollo
@@ -87,4 +88,4 @@ uv run pytest
   docstring no se indexan.
 - Los fragmentos de APIs Python se truncan a 2000 caracteres.
 - Si cambia la versión de un paquete, hay que reindexarlo a mano: no se detecta.
-- No hay ranking ni umbral de relevancia: siempre se responde con lo recuperado.
+- No hay umbral de relevancia: siempre se responde con lo recuperado.
