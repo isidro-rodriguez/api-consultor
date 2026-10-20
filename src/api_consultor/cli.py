@@ -19,7 +19,7 @@ from . import __version__
 from .config import SETTINGS
 from .consultor import Consultor
 from .docs import collect, extract_doc_chunks
-from .evaluation import DEFAULT_KS, evaluate, load_cases
+from .evaluation import DEFAULT_KS, evaluate, load_cases, missing_sources
 from .indexer import extract_chunks
 from .llm import embed
 from .render import (
@@ -301,6 +301,14 @@ def eval_command(
             _fail(
                 "No hay nada indexado todavía.",
                 "Usa `api index <paquete>` o `api index-docs`.",
+            )
+        missing = missing_sources(loaded, store.qualnames())
+        if missing:
+            print_warning(
+                f"{len(missing)} fuente(s) esperada(s) no están en el índice "
+                "y contarán como fallo.",
+                f"Por ejemplo: {missing[0][1]}. "
+                "¿Falta `api index <paquete>` o `api index-docs`?",
             )
         consultor = Consultor(store)
         with progress_bar() as progress, _ollama_errors():

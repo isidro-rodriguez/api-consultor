@@ -73,3 +73,8 @@ def test_sources_group_by_package_and_version(store: Store) -> None:
         "a", [chunk("a.x", "a", "1"), chunk("a.y", "a", "1")], [[0, 1.0, 0, 0]] * 2
     )
     assert store.sources() == [SourceInfo("a", "1", 2), SourceInfo("b", "2", 1)]
+
+
+def test_qualnames_lists_every_indexed_chunk(store: Store) -> None:
+    store.replace("pkg", [chunk("pkg.a"), chunk("pkg.b")], [[1.0, 0, 0, 0]] * 2)
+    assert sorted(store.qualnames()) == ["pkg.a", "pkg.b"]

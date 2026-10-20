@@ -55,7 +55,9 @@ esperadas aparecen entre los primeros resultados:
 - **MRR:** media de `1/posición` de la primera fuente correcta (1,0 es lo ideal).
 
 Los casos son tablas `[[case]]` en un TOML (`question`, `expected`, `category`); ver
-[evals/stdlib.toml](evals/stdlib.toml). Úsalo antes y después de cada cambio en la
+[evals/stdlib.toml](evals/stdlib.toml). `expected` admite nombres exactos, comodines `*`
+y alternativas con `|` (`"json.dumps|library/json.txt#*"`). Si alguna fuente esperada
+no está en el índice, `api eval` lo avisa: ese caso no puede acertar. Úsalo antes y después de cada cambio en la
 recuperación o el chunking. Ejecútalo con Ollama en marcha: usa el índice real.
 
 ## Configuración

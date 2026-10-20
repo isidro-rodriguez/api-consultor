@@ -93,6 +93,9 @@ class Store:
         )
         return [SourceInfo(*row) for row in rows]
 
+    def qualnames(self) -> list[str]:
+        return [row[0] for row in self._db.execute("SELECT qualname FROM chunks")]
+
     def by_name(self, names: Iterable[str], limit_per_name: int = 2) -> list[Chunk]:
         """Coincidencia exacta con el nombre cualificado o con su sufijo."""
         found: list[Chunk] = []

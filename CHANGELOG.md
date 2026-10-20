@@ -14,9 +14,17 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 - Casos de ejemplo sobre la biblioteca estándar en `evals/stdlib.toml`.
 - Banco de regresión sintético (`tests/test_benchmark.py`) con suelos de calidad.
 
+- `api eval` avisa cuando las fuentes esperadas no están en el índice, y `expected`
+  admite alternativas con `|` (API indexada o página de documentación).
+
 ### Cambiado
 
 - `Consultor.retrieve()` acepta un límite opcional `k` (por defecto, `top_k`).
+
+### Corregido
+
+- La tabla de fallos de `api eval` colapsaba la columna del rango y recortaba en exceso
+  la de fuentes esperadas.
 
 ## [0.1.0] - 2026-10-19
 

@@ -13,6 +13,7 @@ from api_consultor.evaluation import (
     evaluate,
     first_relevant_rank,
     load_cases,
+    missing_sources,
     recall_at_k,
     reciprocal_rank,
 )
@@ -32,6 +33,28 @@ def test_first_relevant_rank_uses_exact_names_and_patterns() -> None:
     assert first_relevant_rank(ranked, ["b.y"]) == 2
     assert first_relevant_rank(ranked, ["guia.md#*"]) == 3
     assert first_relevant_rank(ranked, ["inexistente"]) is None
+
+
+def test_alternatives_with_pipe_accept_any_of_them() -> None:
+    ranked = ["x", "library/json.txt#Uso", "json.dumps"]
+    expected = ["json.dumps|library/json.txt#*"]
+    assert first_relevant_rank(ranked, expected) == 2
+    assert recall_at_k(ranked, expected, 3) == 1.0
+    assert first_relevant_rank(["x"], expected) is None
+
+
+def test_missing_sources_reports_patterns_without_any_match() -> None:
+    cases = [
+        EvalCase("q1", ("a.b|docs/a.txt#*",)),
+        EvalCase("q2", ("no.existe", "a.b")),
+    ]
+    missing = missing_sources(cases, ["a.b", "z"])
+    assert missing == [(cases[1], "no.existe")]
+    assert missing_sources(cases, []) == [
+        (cases[0], "a.b|docs/a.txt#*"),
+        (cases[1], "no.existe"),
+        (cases[1], "a.b"),
+    ]
 
 
 def test_exact_names_with_brackets_are_not_treated_as_character_classes() -> None:
@@ -217,6 +240,41 @@ def test_eval_command_lists_failures_and_supports_k(indexed: Path) -> None:
     assert result.exit_code == 0, result.output
     assert "R@3" in result.output
     assert "Fallos" in result.output
+
+
+def test_eval_command_warns_about_sources_missing_from_the_index(indexed: Path) -> None:
+    result = runner.invoke(app, ["eval", str(write_cases(indexed, "no.existe"))])
+    assert result.exit_code == 0, result.output
+    assert "no están en el índice" in result.output
+    assert "no.existe" in result.output
+
+
+def test_eval_command_does_not_warn_when_sources_exist(indexed: Path) -> None:
+    result = runner.invoke(app, ["eval", str(write_cases(indexed, "os.md#*"))])
+    assert "no están en el índice" not in result.output
+
+
+def test_failures_table_keeps_every_column_readable() -> None:
+    long_question = "pregunta larguísima " * 10
+    cases = [EvalCase(long_question, ("fuente.esperada.larga|otra/ruta.txt#*",))]
+    report = evaluate(lambda _q, _k: [chunk("resultado.distinto")], cases, ks=(1, 5))
+    buffer = StringIO()
+    original = render.console
+    render.console = Console(
+        file=buffer, width=90, theme=render.THEME, color_system=None
+    )
+    try:
+        render.show_evaluation(report)
+    finally:
+        render.console = original
+    text = buffer.getvalue()
+    lines = text.splitlines()
+    header = next(line for line in lines if "Pregunta" in line)
+    assert "Rango" in header
+    assert "Esperado" in header
+    assert "Primer resultado" in header
+    assert max(len(line) for line in lines) <= render.SETTINGS.console_width
+    assert "…" in text  # el texto largo se recorta con elipsis, no se colapsa
 
 
 def test_eval_command_rejects_invalid_cases_file(indexed: Path) -> None:

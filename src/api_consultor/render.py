@@ -298,10 +298,11 @@ def show_evaluation(report: EvalReport, *, verbose: bool = False) -> None:
         box=box.ROUNDED,
         border_style="muted",
         header_style=f"bold {FG}",
+        expand=True,
     )
-    detail.add_column("Rango", justify="right")
-    for name in ("Pregunta", "Esperado", "Primer resultado"):
-        detail.add_column(name, overflow="ellipsis", no_wrap=True)
+    detail.add_column("Rango", justify="right", no_wrap=True, min_width=5)
+    for name, ratio in (("Pregunta", 5), ("Esperado", 4), ("Primer resultado", 5)):
+        detail.add_column(name, ratio=ratio, overflow="ellipsis", no_wrap=True)
     for result in shown:
         rank = result.rank
         cell = (

@@ -1,7 +1,7 @@
 """Evaluación objetiva de la recuperación: Recall@k y MRR sobre casos de referencia."""
 
 import tomllib
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from pathlib import Path
@@ -16,6 +16,8 @@ class EvalCase:
     """Pregunta de referencia y fuentes que deberían recuperarse.
 
     `expected` son nombres exactos o patrones `fnmatch` (`*`) de `Chunk.qualname`.
+    Cada elemento admite alternativas separadas por `|` (basta con que acierte una),
+    p. ej. `"json.dumps|library/json.txt#*"`: la API indexada o su página de docs.
     """
 
     question: str
@@ -24,7 +26,11 @@ class EvalCase:
 
 
 def _matches(qualname: str, pattern: str) -> bool:
-    return qualname == pattern or fnmatchcase(qualname, pattern)
+    """Coincide con alguna de las alternativas (`a|b`), exactas o con comodines."""
+    return any(
+        qualname == option or fnmatchcase(qualname, option)
+        for option in pattern.split("|")
+    )
 
 
 def first_relevant_rank(ranked: Sequence[str], expected: Sequence[str]) -> int | None:
@@ -97,6 +103,21 @@ class EvalReport:
     def failures(self, within: int) -> list[CaseResult]:
         """Casos cuya primera fuente relevante no está entre los `within` primeros."""
         return [r for r in self.results if r.rank is None or r.rank > within]
+
+
+def missing_sources(
+    cases: Sequence[EvalCase], qualnames: Collection[str]
+) -> list[tuple[EvalCase, str]]:
+    """Fuentes esperadas que no coinciden con nada de lo indexado.
+
+    Esos casos no pueden acertar: suelen indicar que falta indexar algo.
+    """
+    return [
+        (case, pattern)
+        for case in cases
+        for pattern in case.expected
+        if not any(_matches(name, pattern) for name in qualnames)
+    ]
 
 
 def evaluate(
