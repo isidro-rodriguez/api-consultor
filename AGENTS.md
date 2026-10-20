@@ -26,16 +26,16 @@ declares terminada una tarea que no hayas ejecutado.
 
 ## Mapa del código (`src/api_consultor/`)
 
-| Módulo | Responsabilidad |
-|---|---|
-| `cli.py` | Comandos Typer, orquestación y errores de Ollama. Sin lógica de dominio. |
-| `indexer.py` | Extrae chunks de paquetes instalados (introspección con `inspect`). |
-| `docs.py` | Lee `.txt`/`.md`/`.rst` (sueltos, carpetas, `.zip`) y los trocea por secciones. |
-| `store.py` | SQLite + `sqlite-vec`: `replace`, `by_name`, `search`, `sources`. |
-| `consultor.py` | RAG: `retrieve()` (exacta + vectorial) y `stream()` (generación). |
-| `llm.py` | Capa fina sobre el cliente de Ollama (`embed`, `stream_chat`). |
-| `render.py` | Toda la salida de consola: tema Monokai, Markdown, tablas, versión. |
-| `config.py` | `Settings` inmutable (modelos, rutas, `top_k`, ancho de consola). |
+| Módulo         | Responsabilidad                                                                 |
+| -------------- | ------------------------------------------------------------------------------- |
+| `cli.py`       | Comandos Typer, orquestación y errores de Ollama. Sin lógica de dominio.        |
+| `indexer.py`   | Extrae chunks de paquetes instalados (introspección con `inspect`).             |
+| `docs.py`      | Lee `.txt`/`.md`/`.rst` (sueltos, carpetas, `.zip`) y los trocea por secciones. |
+| `store.py`     | SQLite + `sqlite-vec`: `replace`, `by_name`, `search`, `sources`.               |
+| `consultor.py` | RAG: `retrieve()` (exacta + vectorial) y `stream()` (generación).               |
+| `llm.py`       | Capa fina sobre el cliente de Ollama (`embed`, `stream_chat`).                  |
+| `render.py`    | Toda la salida de consola: tema Monokai, Markdown, tablas, versión.             |
+| `config.py`    | `Settings` inmutable (modelos, rutas, `top_k`, ancho de consola).               |
 
 Nada imprime fuera de `render.py`. `Modelfile` define el modelo `api-consultor`.
 
@@ -102,4 +102,12 @@ la recuperación.
    simples (`Path`, `rglob`).
 4. Ranking con candidatos ampliados, deduplicación y umbral de relevancia.
 5. Citas verificables (`[DOC-01]`) con comprobación de que existen en el contexto.
-6. Aplazado: símbolos sin docstring, AST/herencia/reexportaciones, reranker.
+6. Sources: flag de eliminar fuente
+7. Transformar las fuentes en hiperenlaces que abran el editor de texto en el documento
+8. Aplazado: símbolos sin docstring, AST/herencia/reexportaciones, reranker.
+9. Empaquetado como paquete instalable UV tool
+   - Almacenaje de configuración persistente en directorio correspondiente (si se considera útil)
+   - Almacenaje de la base de datos en dicho directorio
+   - Objetivo: `api ask "¿Cuáles son los tipos de datos en Python?"` en cualquier punto
+10. Repositorio PyPi
+11. CI de Github (windows, linux, publicación en pypi) y dependabot
