@@ -1,0 +1,1000 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index bc617ec..e5bb691 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -18,6 +18,7 @@ uv run ruff check . --fix && uv run ruff format .
+ uv run ty check                           # tipado estricto (all = "error")
+ uv run pre-commit run --all-files         # todo lo anterior + higiene
+ uv run api --help
++uv run api eval evals/stdlib.toml         # lo ejecuta el usuario (usa el índice real)
+ ```
+ 
+ Definición de hecho: `ruff`, `ty` y `pytest` en verde. Pega la salida real; no
+@@ -58,6 +59,10 @@ Nada imprime fuera de `render.py`. `Modelfile` define el modelo `api-consultor`.
+   usan Ollama real (fixtures `stub_ollama` y `block_real_ollama`). Embeddings
+   sintéticos con `hash_embedding`. Paquetes de prueba con `make_package`.
+ - Si una prueba necesita el modelo real, no es un test unitario: documéntalo aparte.
++- Calidad de recuperación: `tests/test_benchmark.py` (corpus sintético, suelos de
++  no regresión) y `api eval` (índice y embeddings reales, lo ejecuta el usuario). Un
++  agente **no** ejecuta `api eval` contra el índice real: usa el banco sintético y
++  sube los umbrales cuando una mejora los supere con holgura.
+ 
+ ## Datos y privacidad (reglas duras)
+ 
+@@ -90,7 +95,7 @@ la recuperación.
+ 
+ ## Hoja de ruta (orden acordado)
+ 
+-1. Tests de evaluación: Recall@k y MRR sobre preguntas sintéticas con fuente esperada.
++1. ~~Evaluación: Recall@k y MRR~~ (hecho: `api eval` y `tests/test_benchmark.py`).
+ 2. Integridad del índice: metadatos (modelo y dimensión de embeddings), validación al
+    abrir, detección de versión obsoleta, distribución ≠ módulo importable.
+ 3. Chunking estructural de APIs sin truncado por caracteres; detección de símbolos
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 5385ddc..9a9a86b 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -7,6 +7,17 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
+ 
+ ## [Unreleased]
+ 
++### Añadido
++
++- Comando `api eval`: mide Recall@k y MRR de la recuperación con casos de referencia
++  en TOML, con desglose por categoría y lista de fallos (`-v` para todos los casos).
++- Casos de ejemplo sobre la biblioteca estándar en `evals/stdlib.toml`.
++- Banco de regresión sintético (`tests/test_benchmark.py`) con suelos de calidad.
++
++### Cambiado
++
++- `Consultor.retrieve()` acepta un límite opcional `k` (por defecto, `top_k`).
++
+ ## [0.1.0] - 2026-10-19
+ 
+ Primera versión etiquetada.
+diff --git a/README.md b/README.md
+index 00d3406..c0e8f4c 100644
+--- a/README.md
++++ b/README.md
+@@ -36,6 +36,7 @@ uv run api index-docs -x 'whatsnew/*'   # omitiendo rutas (patrones fnmatch)
+ uv run api ask "¿cómo hago un POST con timeout?"
+ uv run api ask                          # modo interactivo
+ uv run api sources                      # qué hay indexado
++uv run api eval evals/stdlib.toml       # mide la calidad de la recuperación
+ uv run api --version
+ ```
+ 
+@@ -45,6 +46,18 @@ uv run api --version
+   (<https://docs.python.org/3/download.html>). Está ignorado por git.
+ - La base de datos vive en `data/consultor.db` (también ignorada).
+ 
++## Evaluar la recuperación
++
++`api eval` lanza preguntas de referencia contra el índice y mide si las fuentes
++esperadas aparecen entre los primeros resultados:
++
++- **R@k (Recall@k):** fracción de fuentes esperadas presentes en los `k` primeros.
++- **MRR:** media de `1/posición` de la primera fuente correcta (1,0 es lo ideal).
++
++Los casos son tablas `[[case]]` en un TOML (`question`, `expected`, `category`); ver
++[evals/stdlib.toml](evals/stdlib.toml). Úsalo antes y después de cada cambio en la
++recuperación o el chunking. Ejecútalo con Ollama en marcha: usa el índice real.
++
+ ## Configuración
+ 
+ Modelos, ruta de la base, número de fragmentos (`top_k`) y ancho de consola están en
+diff --git a/evals/stdlib.toml b/evals/stdlib.toml
+new file mode 100644
+index 0000000..2b0e1dd
+--- /dev/null
++++ b/evals/stdlib.toml
+@@ -0,0 +1,95 @@
++# Casos de referencia de ejemplo sobre la biblioteca estándar. Edítalos o crea los tuyos.
++#
++# Requisito:  uv run api index json pathlib asyncio shutil subprocess collections re
++# Uso:        uv run api eval evals/stdlib.toml            (-v para ver todos los casos)
++#
++# `expected` admite nombres exactos o patrones con `*` (p. ej. "library/os.txt#*").
++# Cada pregunta debería tener una única fuente que la responda sin ambigüedad.
++
++# --- Nombre cualificado en la pregunta ---------------------------------------------
++
++[[case]]
++category = "exacto"
++question = "¿Cómo uso json.dumps con indentación?"
++expected = ["json.dumps"]
++
++[[case]]
++category = "exacto"
++question = "¿Qué parámetros tiene asyncio.gather?"
++expected = ["asyncio.gather"]
++
++[[case]]
++category = "exacto"
++question = "¿Cómo funciona subprocess.run?"
++expected = ["subprocess.run"]
++
++[[case]]
++category = "exacto"
++question = "¿Qué hace shutil.copytree?"
++expected = ["shutil.copytree"]
++
++# --- Clase.método sin el módulo ----------------------------------------------------
++
++[[case]]
++category = "cualificado-parcial"
++question = "¿Qué devuelve Path.rglob?"
++expected = ["pathlib.Path.rglob"]
++
++[[case]]
++category = "cualificado-parcial"
++question = "¿Cómo se usa Counter.most_common?"
++expected = ["collections.Counter.most_common"]
++
++# --- Solo el nombre corto ----------------------------------------------------------
++
++[[case]]
++category = "nombre-simple"
++question = "¿Para qué sirve copytree?"
++expected = ["shutil.copytree"]
++
++[[case]]
++category = "nombre-simple"
++question = "¿Qué hace rglob?"
++expected = ["pathlib.Path.rglob"]
++
++[[case]]
++category = "nombre-simple"
++question = "¿Cómo uso most_common?"
++expected = ["collections.Counter.most_common"]
++
++# --- Descripción en lenguaje natural -----------------------------------------------
++
++[[case]]
++category = "descripcion"
++question = "buscar ficheros recursivamente dentro de un directorio"
++expected = ["pathlib.Path.rglob"]
++
++[[case]]
++category = "descripcion"
++question = "copiar un directorio completo con todo su contenido"
++expected = ["shutil.copytree"]
++
++[[case]]
++category = "descripcion"
++question = "ejecutar un comando externo y capturar su salida"
++expected = ["subprocess.run"]
++
++[[case]]
++category = "descripcion"
++question = "lanzar varias corrutinas a la vez y esperar todos los resultados"
++expected = ["asyncio.gather"]
++
++[[case]]
++category = "descripcion"
++question = "contar cuántas veces aparece cada elemento de una lista"
++expected = ["collections.Counter"]
++
++[[case]]
++category = "descripcion"
++question = "reemplazar texto que coincide con una expresión regular"
++expected = ["re.sub"]
++
++[[case]]
++category = "descripcion"
++question = "convertir un diccionario de Python a una cadena JSON"
++expected = ["json.dumps"]
+diff --git a/src/api_consultor/cli.py b/src/api_consultor/cli.py
+index 006559d..cbe6a9d 100644
+--- a/src/api_consultor/cli.py
++++ b/src/api_consultor/cli.py
+@@ -19,6 +19,7 @@
+ from .config import SETTINGS
+ from .consultor import Consultor
+ from .docs import collect, extract_doc_chunks
++from .evaluation import DEFAULT_KS, evaluate, load_cases
+ from .indexer import extract_chunks
+ from .llm import embed
+ from .render import (
+@@ -28,6 +29,7 @@
+     print_warning,
+     progress_bar,
+     prompt,
++    show_evaluation,
+     show_sources,
+     show_sources_table,
+     show_version,
+@@ -259,3 +261,54 @@ def sources() -> None:
+         show_sources_table(rows, "Fuentes indexadas")
+     else:
+         print_hint("Nada indexado todavía.")
++
++
++@app.command("eval")
++def eval_command(
++    cases: Annotated[
++        Path,
++        typer.Argument(
++            metavar="CASOS",
++            exists=True,
++            dir_okay=False,
++            help="Fichero TOML con los casos de referencia.",
++        ),
++    ],
++    k: Annotated[
++        int,
++        typer.Option("--k", "-k", min=1, help="Fragmentos recuperados por pregunta."),
++    ] = 10,
++    verbose: Annotated[
++        bool,
++        typer.Option(
++            "--verbose", "-v", help="Muestra todos los casos, no solo los fallos."
++        ),
++    ] = False,
++) -> None:
++    """Mide Recall@k y MRR de la recuperación con casos de referencia."""
++    try:
++        loaded = load_cases(cases)
++    except ValueError as exc:
++        _fail(str(exc))
++    if not loaded:
++        _fail(
++            f"{cases}: no contiene casos.",
++            "Define tablas [[case]] con question y expected.",
++        )
++    ks = sorted({*(value for value in DEFAULT_KS if value < k), k})
++    with Store(SETTINGS.db_path, SETTINGS.embed_dim) as store:
++        if not store.sources():
++            _fail(
++                "No hay nada indexado todavía.",
++                "Usa `api index <paquete>` o `api index-docs`.",
++            )
++        consultor = Consultor(store)
++        with progress_bar() as progress, _ollama_errors():
++            task = progress.add_task("Evaluando", total=len(loaded))
++            report = evaluate(
++                consultor.retrieve,
++                loaded,
++                ks,
++                on_result=lambda _result: progress.advance(task),
++            )
++    show_evaluation(report, verbose=verbose)
+diff --git a/src/api_consultor/consultor.py b/src/api_consultor/consultor.py
+index 3f40ec4..f202dfc 100644
+--- a/src/api_consultor/consultor.py
++++ b/src/api_consultor/consultor.py
+@@ -25,12 +25,14 @@ class Consultor:
+     def __init__(self, store: Store) -> None:
+         self._store = store
+ 
+-    def retrieve(self, question: str) -> list[Chunk]:
++    def retrieve(self, question: str, k: int | None = None) -> list[Chunk]:
++        """Fragmentos más relevantes (por defecto `SETTINGS.top_k`)."""
++        limit = SETTINGS.top_k if k is None else k
+         exact = self._store.by_name(_IDENTIFIER.findall(question))
+-        semantic = self._store.search(embed([question])[0], SETTINGS.top_k)
++        semantic = self._store.search(embed([question])[0], limit)
+         # dict: elimina duplicados conservando el orden (primero los exactos)
+         merged = {chunk.qualname: chunk for chunk in (*exact, *semantic)}
+-        return list(merged.values())[: SETTINGS.top_k]
++        return list(merged.values())[:limit]
+ 
+     def stream(self, question: str, chunks: list[Chunk]) -> Iterator[str]:
+         """Genera la respuesta en streaming a partir de los fragmentos recuperados."""
+diff --git a/src/api_consultor/evaluation.py b/src/api_consultor/evaluation.py
+new file mode 100644
+index 0000000..daa83b5
+--- /dev/null
++++ b/src/api_consultor/evaluation.py
+@@ -0,0 +1,151 @@
++"""Evaluación objetiva de la recuperación: Recall@k y MRR sobre casos de referencia."""
++
++import tomllib
++from collections.abc import Callable, Sequence
++from dataclasses import dataclass
++from fnmatch import fnmatchcase
++from pathlib import Path
++
++from .store import Chunk
++
++DEFAULT_KS = (1, 5, 10)
++
++
++@dataclass(frozen=True, slots=True)
++class EvalCase:
++    """Pregunta de referencia y fuentes que deberían recuperarse.
++
++    `expected` son nombres exactos o patrones `fnmatch` (`*`) de `Chunk.qualname`.
++    """
++
++    question: str
++    expected: tuple[str, ...]
++    category: str = "general"
++
++
++def _matches(qualname: str, pattern: str) -> bool:
++    return qualname == pattern or fnmatchcase(qualname, pattern)
++
++
++def first_relevant_rank(ranked: Sequence[str], expected: Sequence[str]) -> int | None:
++    """Posición (desde 1) del primer resultado relevante, o None si no aparece."""
++    for position, qualname in enumerate(ranked, start=1):
++        if any(_matches(qualname, pattern) for pattern in expected):
++            return position
++    return None
++
++
++def recall_at_k(ranked: Sequence[str], expected: Sequence[str], k: int) -> float:
++    """Fracción de fuentes esperadas que aparecen entre los `k` primeros resultados."""
++    top = ranked[:k]
++    found = sum(any(_matches(q, pattern) for q in top) for pattern in expected)
++    return found / len(expected)
++
++
++def reciprocal_rank(ranked: Sequence[str], expected: Sequence[str]) -> float:
++    rank = first_relevant_rank(ranked, expected)
++    return 0.0 if rank is None else 1 / rank
++
++
++@dataclass(frozen=True, slots=True)
++class CaseResult:
++    case: EvalCase
++    ranked: tuple[str, ...]
++
++    @property
++    def rank(self) -> int | None:
++        return first_relevant_rank(self.ranked, self.case.expected)
++
++    def recall(self, k: int) -> float:
++        return recall_at_k(self.ranked, self.case.expected, k)
++
++    @property
++    def reciprocal_rank(self) -> float:
++        return reciprocal_rank(self.ranked, self.case.expected)
++
++
++@dataclass(frozen=True, slots=True)
++class Metrics:
++    cases: int
++    recall: dict[int, float]
++    mrr: float
++
++
++@dataclass(frozen=True, slots=True)
++class EvalReport:
++    results: tuple[CaseResult, ...]
++    ks: tuple[int, ...]
++
++    @property
++    def categories(self) -> list[str]:
++        return sorted({result.case.category for result in self.results})
++
++    def metrics(self, category: str | None = None) -> Metrics:
++        """Métricas medias, globales o de una categoría (MRR sobre max(ks))."""
++        selected = [
++            r for r in self.results if category is None or r.case.category == category
++        ]
++        if not selected:
++            return Metrics(0, dict.fromkeys(self.ks, 0.0), 0.0)
++        total = len(selected)
++        return Metrics(
++            cases=total,
++            recall={k: sum(r.recall(k) for r in selected) / total for k in self.ks},
++            mrr=sum(r.reciprocal_rank for r in selected) / total,
++        )
++
++    def failures(self, within: int) -> list[CaseResult]:
++        """Casos cuya primera fuente relevante no está entre los `within` primeros."""
++        return [r for r in self.results if r.rank is None or r.rank > within]
++
++
++def evaluate(
++    retrieve: Callable[[str, int], list[Chunk]],
++    cases: Sequence[EvalCase],
++    ks: Sequence[int] = DEFAULT_KS,
++    on_result: Callable[[CaseResult], None] | None = None,
++) -> EvalReport:
++    """Ejecuta `retrieve(pregunta, k)` para cada caso y agrega las métricas."""
++    sorted_ks = tuple(sorted(set(ks)))
++    if not sorted_ks or sorted_ks[0] < 1:
++        message = "ks debe contener enteros positivos"
++        raise ValueError(message)
++    results: list[CaseResult] = []
++    for case in cases:
++        chunks = retrieve(case.question, sorted_ks[-1])
++        result = CaseResult(case, tuple(chunk.qualname for chunk in chunks))
++        results.append(result)
++        if on_result is not None:
++            on_result(result)
++    return EvalReport(tuple(results), sorted_ks)
++
++
++def load_cases(path: Path) -> list[EvalCase]:
++    """Lee casos de un TOML con tablas `[[case]]` (question, expected, category)."""
++    data = tomllib.loads(path.read_text(encoding="utf-8"))
++    raw = data.get("case", [])
++    if not isinstance(raw, list):
++        message = f"{path}: 'case' debe ser una lista de tablas ([[case]])"
++        raise ValueError(message)
++    cases: list[EvalCase] = []
++    for index, entry in enumerate(raw, start=1):
++        question = entry.get("question") if isinstance(entry, dict) else None
++        expected = entry.get("expected") if isinstance(entry, dict) else None
++        category = entry.get("category", "general") if isinstance(entry, dict) else None
++        if not isinstance(question, str) or not question.strip():
++            message = f"{path}: caso {index}: falta 'question' (texto)"
++            raise ValueError(message)
++        if (
++            not isinstance(expected, list)
++            or not expected
++            or not all(isinstance(item, str) for item in expected)
++        ):
++            message = f"{path}: caso {index}: 'expected' debe ser una lista de textos"
++            raise ValueError(message)
++        if not isinstance(category, str):
++            message = f"{path}: caso {index}: 'category' debe ser un texto"
++            raise ValueError(message)
++        cases.append(
++            EvalCase(question, tuple(str(item) for item in expected), category)
++        )
++    return cases
+diff --git a/src/api_consultor/render.py b/src/api_consultor/render.py
+index 4fe2ff5..83889e7 100644
+--- a/src/api_consultor/render.py
++++ b/src/api_consultor/render.py
+@@ -27,6 +27,7 @@
+ from typer import rich_utils
+ 
+ from .config import SETTINGS
++from .evaluation import EvalReport
+ from .store import Chunk, SourceInfo
+ 
+ # Paleta Monokai
+@@ -247,6 +248,78 @@ def show_sources_table(sources: Sequence[SourceInfo], title: str) -> None:
+     console.print(_fit(table))
+ 
+ 
++# --- Evaluación ---------------------------------------------------------------
++
++
++def _score(value: float, *, percent: bool) -> Text:
++    """Valor coloreado según su calidad: verde >= 0,8; naranja >= 0,5; rosa el resto."""
++    style = "success" if value >= 0.8 else "warning" if value >= 0.5 else "error"
++    return Text(f"{value:.0%}" if percent else f"{value:.3f}", style=style)
++
++
++def show_evaluation(report: EvalReport, *, verbose: bool = False) -> None:
++    """Tabla de métricas (global y por categoría) y lista de casos fallidos."""
++    table = Table(
++        title="Evaluación de la recuperación",
++        title_style="title",
++        title_justify="left",
++        box=box.ROUNDED,
++        border_style="muted",
++        header_style=f"bold {FG}",
++    )
++    table.add_column("Categoría", style="info")
++    table.add_column("Casos", justify="right", style="muted")
++    for k in report.ks:
++        table.add_column(f"R@{k}", justify="right")
++    table.add_column("MRR", justify="right")
++    rows = [("global", report.metrics())]
++    if len(report.categories) > 1:
++        rows += [(name, report.metrics(name)) for name in report.categories]
++    for name, metrics in rows:
++        table.add_row(
++            name,
++            str(metrics.cases),
++            *(_score(metrics.recall[k], percent=True) for k in report.ks),
++            _score(metrics.mrr, percent=False),
++        )
++    console.print(_fit(table))
++
++    within = 5 if 5 in report.ks else report.ks[-1]
++    shown = list(report.results) if verbose else report.failures(within)
++    if not shown:
++        console.print(
++            Text(f"\n✔ Todos los casos aciertan en el top-{within}", style="success")
++        )
++        return
++    detail = Table(
++        title="Casos" if verbose else f"Fallos (fuera del top-{within})",
++        title_style="title",
++        title_justify="left",
++        box=box.ROUNDED,
++        border_style="muted",
++        header_style=f"bold {FG}",
++    )
++    detail.add_column("Rango", justify="right")
++    for name in ("Pregunta", "Esperado", "Primer resultado"):
++        detail.add_column(name, overflow="ellipsis", no_wrap=True)
++    for result in shown:
++        rank = result.rank
++        cell = (
++            Text("—", style="error")
++            if rank is None
++            else Text(str(rank), style="success" if rank <= within else "warning")
++        )
++        first = result.ranked[0] if result.ranked else "—"
++        detail.add_row(
++            cell,
++            result.case.question,
++            ", ".join(result.case.expected),
++            Text(first, style="muted"),
++        )
++    console.print()
++    console.print(_fit(detail))
++
++
+ # --- Versión ------------------------------------------------------------------
+ 
+ 
+diff --git a/tests/data/geolib_cases.toml b/tests/data/geolib_cases.toml
+new file mode 100644
+index 0000000..e2afdca
+--- /dev/null
++++ b/tests/data/geolib_cases.toml
+@@ -0,0 +1,46 @@
++# Casos de referencia del corpus sintético `geolib` (ver tests/test_benchmark.py).
++
++[[case]]
++category = "exacto"
++question = "¿Cómo uso geolib.geoio.read_geojson con una ruta?"
++expected = ["geolib.geoio.read_geojson"]
++
++[[case]]
++category = "cualificado-parcial"
++question = "¿Qué devuelve Polygon.centroid?"
++expected = ["geolib.shapes.Polygon.centroid"]
++
++[[case]]
++category = "snake_case"
++question = "Quiero usar project_point con otro CRS"
++expected = ["geolib.projection.project_point"]
++
++[[case]]
++category = "nombre-simple"
++question = "¿Para qué sirve haversine?"
++expected = ["geolib.distance.haversine"]
++
++[[case]]
++category = "nombre-simple"
++question = "¿Cómo funciona inverse?"
++expected = ["geolib.projection.Mercator.inverse"]
++
++[[case]]
++category = "descripcion"
++question = "calcular la distancia entre dos coordenadas sobre la esfera terrestre"
++expected = ["geolib.distance.haversine"]
++
++[[case]]
++category = "descripcion"
++question = "escribir un diccionario como fichero GeoJSON en disco"
++expected = ["geolib.geoio.write_geojson"]
++
++[[case]]
++category = "ambigua"
++question = "¿Cómo calculo el área?"
++expected = ["geolib.shapes.Polygon.area", "geolib.shapes.Circle.area"]
++
++[[case]]
++category = "documentacion"
++question = "¿Qué proyección elijo para un mapa web?"
++expected = ["guia.md#*"]
+diff --git a/tests/test_benchmark.py b/tests/test_benchmark.py
+new file mode 100644
+index 0000000..6a40879
+--- /dev/null
++++ b/tests/test_benchmark.py
+@@ -0,0 +1,137 @@
++"""Banco de regresión de la recuperación sobre un corpus sintético.
++
++Usa embeddings sintéticos (bolsa de palabras hasheada), así que mide la lógica de
++recuperación —búsqueda exacta, mezcla y deduplicación—, no la calidad semántica de
++`bge-m3`. Para eso está `api eval` sobre el índice real. Los umbrales son suelos de
++no regresión: súbelos cuando una mejora los supere con holgura.
++"""
++
++from pathlib import Path
++
++import pytest
++
++from api_consultor.consultor import Consultor
++from api_consultor.docs import extract_doc_chunks
++from api_consultor.evaluation import EvalReport, evaluate, load_cases
++from api_consultor.indexer import extract_chunks
++from api_consultor.store import Store
++
++from .conftest import EMBED_DIM, PackageFactory, StubOllama, fake_embed
++
++GEOLIB = {
++    "__init__.py": '"""Geolib: utilidades geométricas y de coordenadas."""\n',
++    "shapes.py": '''
++        class Polygon:
++            """Polígono definido por una lista de vértices."""
++
++            def area(self) -> float:
++                """Calcula el área del polígono con la fórmula del cordón."""
++
++            def perimeter(self) -> float:
++                """Calcula el perímetro sumando la longitud de todos los lados."""
++
++            def centroid(self) -> tuple[float, float]:
++                """Devuelve el centroide, el punto medio geométrico del polígono."""
++
++        class Circle:
++            """Círculo definido por su centro y su radio."""
++
++            def area(self) -> float:
++                """Calcula el área del círculo a partir del radio."""
++
++            def circumference(self) -> float:
++                """Calcula la circunferencia del círculo."""
++        ''',
++    "geoio.py": '''
++        def read_geojson(path: str) -> dict:
++            """Lee un fichero GeoJSON y devuelve su contenido como diccionario."""
++
++        def write_geojson(data: dict, path: str) -> None:
++            """Escribe un diccionario como fichero GeoJSON en disco."""
++        ''',
++    "projection.py": '''
++        class Mercator:
++            """Proyección Mercator, habitual en mapas web."""
++
++            def forward(self, lat: float, lon: float) -> tuple[float, float]:
++                """Convierte latitud y longitud en coordenadas planas."""
++
++            def inverse(self, x: float, y: float) -> tuple[float, float]:
++                """Convierte coordenadas planas en latitud y longitud."""
++
++        def project_point(lat: float, lon: float, crs: str = "EPSG:3857") -> tuple:
++            """Proyecta un punto geográfico al sistema de referencia indicado."""
++        ''',
++    "distance.py": '''
++        def haversine(a: tuple, b: tuple) -> float:
++            """Calcula la distancia sobre la esfera terrestre entre dos coordenadas."""
++
++        def bearing(a: tuple, b: tuple) -> float:
++            """Calcula el rumbo inicial en grados entre dos coordenadas."""
++        ''',
++}
++
++GUIDE = """\
++# Guía de geolib
++
++Introducción general a la biblioteca.
++
++## Elegir proyección
++
++Para un mapa web conviene la proyección Mercator. Para medir áreas, una proyección
++equivalente.
++
++## Formatos de entrada y salida
++
++Geolib lee y escribe ficheros GeoJSON y también CSV con columnas de coordenadas.
++"""
++
++CASES = Path(__file__).parent / "data" / "geolib_cases.toml"
++
++
++@pytest.fixture
++def corpus(
++    make_package: PackageFactory, tmp_path: Path, stub_ollama: StubOllama
++) -> Consultor:
++    chunks = extract_chunks(make_package("geolib", GEOLIB))
++    docs = extract_doc_chunks("guia-1.0", [("guia.md", GUIDE)])
++    store = Store(tmp_path / "bench.db", EMBED_DIM)
++    store.replace("geolib", chunks, fake_embed([c.content for c in chunks]))
++    store.replace("guia-1.0", docs, fake_embed([c.content for c in docs]))
++    return Consultor(store)
++
++
++@pytest.fixture
++def report(corpus: Consultor) -> EvalReport:
++    return evaluate(corpus.retrieve, load_cases(CASES))
++
++
++def test_corpus_contains_expected_sources(corpus: Consultor) -> None:
++    names = {c.qualname for c in corpus.retrieve("Polygon.area", k=50)}
++    assert "geolib.shapes.Polygon.area" in names
++    assert "guia.md#Elegir proyección" in names
++
++
++def test_global_retrieval_quality_does_not_regress(report: EvalReport) -> None:
++    metrics = report.metrics()
++    assert metrics.cases == 9
++    assert metrics.recall[5] >= 0.9
++    assert metrics.recall[10] >= 0.9
++    assert metrics.mrr >= 0.8
++
++
++@pytest.mark.parametrize(
++    ("category", "minimum_mrr"),
++    [
++        ("exacto", 1.0),
++        ("cualificado-parcial", 1.0),
++        ("snake_case", 1.0),
++        ("nombre-simple", 0.5),
++        ("descripcion", 0.5),
++        ("documentacion", 0.5),
++    ],
++)
++def test_per_category_floor(
++    report: EvalReport, category: str, minimum_mrr: float
++) -> None:
++    assert report.metrics(category).mrr >= minimum_mrr
+diff --git a/tests/test_consultor.py b/tests/test_consultor.py
+index 2737fff..77ddddb 100644
+--- a/tests/test_consultor.py
++++ b/tests/test_consultor.py
+@@ -58,3 +58,8 @@ def test_stream_sends_context_and_question(
+     content = stub_ollama.messages[0][0]["content"]
+     assert "<docs source=" in content
+     assert content.endswith("Pregunta: función número 3")
++
++
++def test_retrieve_accepts_a_custom_limit(consultor: Consultor) -> None:
++    assert len(consultor.retrieve("función número", k=8)) == 8
++    assert len(consultor.retrieve("función número", k=2)) == 2
+diff --git a/tests/test_evaluation.py b/tests/test_evaluation.py
+new file mode 100644
+index 0000000..6396fb2
+--- /dev/null
++++ b/tests/test_evaluation.py
+@@ -0,0 +1,255 @@
++import tomllib
++from io import StringIO
++from pathlib import Path
++
++import pytest
++from rich.console import Console
++from typer.testing import CliRunner
++
++from api_consultor import render
++from api_consultor.cli import app
++from api_consultor.evaluation import (
++    EvalCase,
++    evaluate,
++    first_relevant_rank,
++    load_cases,
++    recall_at_k,
++    reciprocal_rank,
++)
++from api_consultor.store import Chunk
++
++from .conftest import StubOllama
++
++runner = CliRunner()
++
++
++def chunk(qualname: str) -> Chunk:
++    return Chunk(qualname, "pkg", "1.0", qualname)
++
++
++def test_first_relevant_rank_uses_exact_names_and_patterns() -> None:
++    ranked = ["a.x", "b.y", "guia.md#Sección"]
++    assert first_relevant_rank(ranked, ["b.y"]) == 2
++    assert first_relevant_rank(ranked, ["guia.md#*"]) == 3
++    assert first_relevant_rank(ranked, ["inexistente"]) is None
++
++
++def test_exact_names_with_brackets_are_not_treated_as_character_classes() -> None:
++    assert first_relevant_rank(["a.txt#Ejemplos [2]"], ["a.txt#Ejemplos [2]"]) == 1
++
++
++def test_recall_at_k_counts_expected_sources_found() -> None:
++    ranked = ["a", "b", "c", "d"]
++    assert recall_at_k(ranked, ["a", "d"], 1) == 0.5
++    assert recall_at_k(ranked, ["a", "d"], 4) == 1.0
++    assert recall_at_k(ranked, ["z"], 4) == 0.0
++
++
++def test_reciprocal_rank() -> None:
++    assert reciprocal_rank(["a", "b", "c"], ["c"]) == pytest.approx(1 / 3)
++    assert reciprocal_rank(["a"], ["z"]) == 0.0
++
++
++def test_evaluate_aggregates_global_and_per_category_metrics() -> None:
++    cases = [
++        EvalCase("q1", ("a",), "uno"),
++        EvalCase("q2", ("b",), "uno"),
++        EvalCase("q3", ("c",), "dos"),
++    ]
++    results = {"q1": ["a", "x"], "q2": ["x", "b"], "q3": ["x", "y"]}
++    seen: list[str] = []
++    report = evaluate(
++        lambda question, k: [chunk(n) for n in results[question][:k]],
++        cases,
++        ks=(2, 1, 2),
++        on_result=lambda result: seen.append(result.case.question),
++    )
++    assert seen == ["q1", "q2", "q3"]
++    assert report.ks == (1, 2)
++    overall = report.metrics()
++    assert overall.cases == 3
++    assert overall.recall == pytest.approx({1: 1 / 3, 2: 2 / 3})
++    assert overall.mrr == pytest.approx((1 + 0.5 + 0) / 3)
++    assert report.metrics("uno").mrr == pytest.approx(0.75)
++    assert report.categories == ["dos", "uno"]
++    assert [r.case.question for r in report.failures(within=1)] == ["q2", "q3"]
++
++
++def test_evaluate_passes_the_largest_k_to_retrieve() -> None:
++    requested: list[int] = []
++
++    def retrieve(_question: str, k: int) -> list[Chunk]:
++        requested.append(k)
++        return []
++
++    evaluate(retrieve, [EvalCase("q", ("a",))], ks=(1, 5, 10))
++    assert requested == [10]
++
++
++@pytest.mark.parametrize("ks", [(), (0,), (-1, 5)])
++def test_evaluate_rejects_invalid_ks(ks: tuple[int, ...]) -> None:
++    with pytest.raises(ValueError, match="positivos"):
++        evaluate(lambda _q, _k: [], [EvalCase("q", ("a",))], ks=ks)
++
++
++def test_metrics_of_an_empty_category_are_zero() -> None:
++    report = evaluate(lambda _q, _k: [], [EvalCase("q", ("a",))])
++    assert report.metrics("no-existe").cases == 0
++    assert report.metrics("no-existe").mrr == 0.0
++
++
++def test_load_cases_reads_toml(tmp_path: Path) -> None:
++    path = tmp_path / "casos.toml"
++    path.write_text(
++        '[[case]]\nquestion = "¿Qué?"\nexpected = ["a.b", "c.*"]\ncategory = "x"\n\n'
++        '[[case]]\nquestion = "Otra"\nexpected = ["z"]\n',
++        encoding="utf-8",
++    )
++    assert load_cases(path) == [
++        EvalCase("¿Qué?", ("a.b", "c.*"), "x"),
++        EvalCase("Otra", ("z",), "general"),
++    ]
++
++
++@pytest.mark.parametrize(
++    ("content", "message"),
++    [
++        ('[[case]]\nexpected = ["a"]\n', "falta 'question'"),
++        ('[[case]]\nquestion = "  "\nexpected = ["a"]\n', "falta 'question'"),
++        ('[[case]]\nquestion = "q"\n', "'expected'"),
++        ('[[case]]\nquestion = "q"\nexpected = []\n', "'expected'"),
++        ('[[case]]\nquestion = "q"\nexpected = [1]\n', "'expected'"),
++        ('[[case]]\nquestion = "q"\nexpected = ["a"]\ncategory = 3\n', "'category'"),
++        ('case = "no es una lista"\n', "lista de tablas"),
++    ],
++)
++def test_load_cases_reports_invalid_files(
++    tmp_path: Path, content: str, message: str
++) -> None:
++    path = tmp_path / "malo.toml"
++    path.write_text(content, encoding="utf-8")
++    with pytest.raises(ValueError, match=message):
++        load_cases(path)
++
++
++def test_load_cases_reports_toml_syntax_errors(tmp_path: Path) -> None:
++    path = tmp_path / "roto.toml"
++    path.write_text("esto no es toml", encoding="utf-8")
++    with pytest.raises(tomllib.TOMLDecodeError):
++        load_cases(path)
++
++
++def render_report(verbose: bool = False) -> str:
++    cases = [
++        EvalCase("pregunta acertada", ("a",), "uno"),
++        EvalCase("pregunta fallida", ("zzz",), "dos"),
++    ]
++    report = evaluate(lambda _q, _k: [chunk("a"), chunk("b")], cases, ks=(1, 5))
++    buffer = StringIO()
++    out = Console(file=buffer, width=120, theme=render.THEME, color_system=None)
++    original = render.console
++    render.console = out
++    try:
++        render.show_evaluation(report, verbose=verbose)
++    finally:
++        render.console = original
++    return buffer.getvalue()
++
++
++def test_show_evaluation_lists_metrics_and_only_failures_by_default() -> None:
++    text = render_report()
++    assert "R@1" in text
++    assert "R@5" in text
++    assert "MRR" in text
++    assert "global" in text
++    assert "pregunta fallida" in text
++    assert "pregunta acertada" not in text
++
++
++def test_show_evaluation_verbose_lists_every_case() -> None:
++    text = render_report(verbose=True)
++    assert "pregunta fallida" in text
++    assert "pregunta acertada" in text
++
++
++def test_show_evaluation_celebrates_when_nothing_fails() -> None:
++    report = evaluate(lambda _q, _k: [chunk("a")], [EvalCase("q", ("a",))], ks=(1, 5))
++    buffer = StringIO()
++    original = render.console
++    render.console = Console(file=buffer, width=100, theme=render.THEME)
++    try:
++        render.show_evaluation(report)
++    finally:
++        render.console = original
++    assert "Todos los casos aciertan en el top-5" in buffer.getvalue()
++
++
++@pytest.fixture
++def indexed(isolated_cwd: Path, stub_ollama: StubOllama) -> Path:
++    folder = isolated_cwd / "docs" / "notas"
++    folder.mkdir(parents=True)
++    (folder / "os.md").write_text(
++        "# os.listdir\n\nDevuelve los nombres de las entradas de un directorio.\n",
++        encoding="utf-8",
++    )
++    assert runner.invoke(app, ["index-docs"]).exit_code == 0
++    return isolated_cwd
++
++
++def write_cases(folder: Path, expected: str) -> Path:
++    path = folder / "casos.toml"
++    case = f'category = "doc"\nquestion = "os.listdir"\nexpected = ["{expected}"]\n'
++    path.write_text(f"[[case]]\n{case}", encoding="utf-8")
++    return path
++
++
++def test_eval_command_reports_metrics(indexed: Path) -> None:
++    result = runner.invoke(app, ["eval", str(write_cases(indexed, "os.md#*"))])
++    assert result.exit_code == 0, result.output
++    assert "Evaluación de la recuperación" in result.output
++    assert "MRR" in result.output
++    assert "Todos los casos aciertan" in result.output
++
++
++def test_eval_command_lists_failures_and_supports_k(indexed: Path) -> None:
++    path = write_cases(indexed, "no.existe")
++    result = runner.invoke(app, ["eval", str(path), "-k", "3"])
++    assert result.exit_code == 0, result.output
++    assert "R@3" in result.output
++    assert "Fallos" in result.output
++
++
++def test_eval_command_rejects_invalid_cases_file(indexed: Path) -> None:
++    path = indexed / "malo.toml"
++    path.write_text('[[case]]\nquestion = "q"\n', encoding="utf-8")
++    result = runner.invoke(app, ["eval", str(path)])
++    assert result.exit_code == 1
++    assert "'expected'" in result.output
++
++
++def test_eval_command_rejects_empty_cases_file(indexed: Path) -> None:
++    path = indexed / "vacio.toml"
++    path.write_text("# sin casos\n", encoding="utf-8")
++    result = runner.invoke(app, ["eval", str(path)])
++    assert result.exit_code == 1
++    assert "[[case]]" in result.output
++
++
++def test_eval_command_requires_an_index(isolated_cwd: Path) -> None:
++    result = runner.invoke(app, ["eval", str(write_cases(isolated_cwd, "x"))])
++    assert result.exit_code == 1
++    assert "nada indexado" in result.output.lower()
++
++
++def test_eval_command_rejects_missing_file() -> None:
++    assert runner.invoke(app, ["eval", "no_existe.toml"]).exit_code == 2
++
++
++def test_bundled_stdlib_cases_file_is_well_formed() -> None:
++    cases = load_cases(Path(__file__).parents[1] / "evals" / "stdlib.toml")
++    assert len(cases) >= 10
++    assert {case.category for case in cases} >= {
++        "exacto",
++        "nombre-simple",
++        "descripcion",
++    }

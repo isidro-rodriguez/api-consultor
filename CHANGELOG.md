@@ -7,6 +7,17 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Añadido
+
+- Comando `api eval`: mide Recall@k y MRR de la recuperación con casos de referencia
+  en TOML, con desglose por categoría y lista de fallos (`-v` para todos los casos).
+- Casos de ejemplo sobre la biblioteca estándar en `evals/stdlib.toml`.
+- Banco de regresión sintético (`tests/test_benchmark.py`) con suelos de calidad.
+
+### Cambiado
+
+- `Consultor.retrieve()` acepta un límite opcional `k` (por defecto, `top_k`).
+
 ## [0.1.0] - 2026-10-19
 
 Primera versión etiquetada.

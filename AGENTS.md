@@ -18,6 +18,7 @@ uv run ruff check . --fix && uv run ruff format .
 uv run ty check                           # tipado estricto (all = "error")
 uv run pre-commit run --all-files         # todo lo anterior + higiene
 uv run api --help
+uv run api eval evals/stdlib.toml         # lo ejecuta el usuario (usa el índice real)
 ```
 
 Definición de hecho: `ruff`, `ty` y `pytest` en verde. Pega la salida real; no
@@ -58,6 +59,10 @@ Nada imprime fuera de `render.py`. `Modelfile` define el modelo `api-consultor`.
   usan Ollama real (fixtures `stub_ollama` y `block_real_ollama`). Embeddings
   sintéticos con `hash_embedding`. Paquetes de prueba con `make_package`.
 - Si una prueba necesita el modelo real, no es un test unitario: documéntalo aparte.
+- Calidad de recuperación: `tests/test_benchmark.py` (corpus sintético, suelos de
+  no regresión) y `api eval` (índice y embeddings reales, lo ejecuta el usuario). Un
+  agente **no** ejecuta `api eval` contra el índice real: usa el banco sintético y
+  sube los umbrales cuando una mejora los supere con holgura.
 
 ## Datos y privacidad (reglas duras)
 
@@ -90,7 +95,7 @@ la recuperación.
 
 ## Hoja de ruta (orden acordado)
 
-1. Tests de evaluación: Recall@k y MRR sobre preguntas sintéticas con fuente esperada.
+1. ~~Evaluación: Recall@k y MRR~~ (hecho: `api eval` y `tests/test_benchmark.py`).
 2. Integridad del índice: metadatos (modelo y dimensión de embeddings), validación al
    abrir, detección de versión obsoleta, distribución ≠ módulo importable.
 3. Chunking estructural de APIs sin truncado por caracteres; detección de símbolos

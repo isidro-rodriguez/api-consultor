@@ -1,0 +1,46 @@
+# Casos de referencia del corpus sintético `geolib` (ver tests/test_benchmark.py).
+
+[[case]]
+category = "exacto"
+question = "¿Cómo uso geolib.geoio.read_geojson con una ruta?"
+expected = ["geolib.geoio.read_geojson"]
+
+[[case]]
+category = "cualificado-parcial"
+question = "¿Qué devuelve Polygon.centroid?"
+expected = ["geolib.shapes.Polygon.centroid"]
+
+[[case]]
+category = "snake_case"
+question = "Quiero usar project_point con otro CRS"
+expected = ["geolib.projection.project_point"]
+
+[[case]]
+category = "nombre-simple"
+question = "¿Para qué sirve haversine?"
+expected = ["geolib.distance.haversine"]
+
+[[case]]
+category = "nombre-simple"
+question = "¿Cómo funciona inverse?"
+expected = ["geolib.projection.Mercator.inverse"]
+
+[[case]]
+category = "descripcion"
+question = "calcular la distancia entre dos coordenadas sobre la esfera terrestre"
+expected = ["geolib.distance.haversine"]
+
+[[case]]
+category = "descripcion"
+question = "escribir un diccionario como fichero GeoJSON en disco"
+expected = ["geolib.geoio.write_geojson"]
+
+[[case]]
+category = "ambigua"
+question = "¿Cómo calculo el área?"
+expected = ["geolib.shapes.Polygon.area", "geolib.shapes.Circle.area"]
+
+[[case]]
+category = "documentacion"
+question = "¿Qué proyección elijo para un mapa web?"
+expected = ["guia.md#*"]

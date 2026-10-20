@@ -19,6 +19,7 @@ from . import __version__
 from .config import SETTINGS
 from .consultor import Consultor
 from .docs import collect, extract_doc_chunks
+from .evaluation import DEFAULT_KS, evaluate, load_cases
 from .indexer import extract_chunks
 from .llm import embed
 from .render import (
@@ -28,6 +29,7 @@ from .render import (
     print_warning,
     progress_bar,
     prompt,
+    show_evaluation,
     show_sources,
     show_sources_table,
     show_version,
@@ -259,3 +261,54 @@ def sources() -> None:
         show_sources_table(rows, "Fuentes indexadas")
     else:
         print_hint("Nada indexado todavía.")
+
+
+@app.command("eval")
+def eval_command(
+    cases: Annotated[
+        Path,
+        typer.Argument(
+            metavar="CASOS",
+            exists=True,
+            dir_okay=False,
+            help="Fichero TOML con los casos de referencia.",
+        ),
+    ],
+    k: Annotated[
+        int,
+        typer.Option("--k", "-k", min=1, help="Fragmentos recuperados por pregunta."),
+    ] = 10,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose", "-v", help="Muestra todos los casos, no solo los fallos."
+        ),
+    ] = False,
+) -> None:
+    """Mide Recall@k y MRR de la recuperación con casos de referencia."""
+    try:
+        loaded = load_cases(cases)
+    except ValueError as exc:
+        _fail(str(exc))
+    if not loaded:
+        _fail(
+            f"{cases}: no contiene casos.",
+            "Define tablas [[case]] con question y expected.",
+        )
+    ks = sorted({*(value for value in DEFAULT_KS if value < k), k})
+    with Store(SETTINGS.db_path, SETTINGS.embed_dim) as store:
+        if not store.sources():
+            _fail(
+                "No hay nada indexado todavía.",
+                "Usa `api index <paquete>` o `api index-docs`.",
+            )
+        consultor = Consultor(store)
+        with progress_bar() as progress, _ollama_errors():
+            task = progress.add_task("Evaluando", total=len(loaded))
+            report = evaluate(
+                consultor.retrieve,
+                loaded,
+                ks,
+                on_result=lambda _result: progress.advance(task),
+            )
+    show_evaluation(report, verbose=verbose)

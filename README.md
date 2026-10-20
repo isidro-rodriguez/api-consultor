@@ -36,6 +36,7 @@ uv run api index-docs -x 'whatsnew/*'   # omitiendo rutas (patrones fnmatch)
 uv run api ask "¿cómo hago un POST con timeout?"
 uv run api ask                          # modo interactivo
 uv run api sources                      # qué hay indexado
+uv run api eval evals/stdlib.toml       # mide la calidad de la recuperación
 uv run api --version
 ```
 
@@ -44,6 +45,18 @@ uv run api --version
 - `docs/` admite, por ejemplo, el zip de texto de la documentación de Python
   (<https://docs.python.org/3/download.html>). Está ignorado por git.
 - La base de datos vive en `data/consultor.db` (también ignorada).
+
+## Evaluar la recuperación
+
+`api eval` lanza preguntas de referencia contra el índice y mide si las fuentes
+esperadas aparecen entre los primeros resultados:
+
+- **R@k (Recall@k):** fracción de fuentes esperadas presentes en los `k` primeros.
+- **MRR:** media de `1/posición` de la primera fuente correcta (1,0 es lo ideal).
+
+Los casos son tablas `[[case]]` en un TOML (`question`, `expected`, `category`); ver
+[evals/stdlib.toml](evals/stdlib.toml). Úsalo antes y después de cada cambio en la
+recuperación o el chunking. Ejecútalo con Ollama en marcha: usa el índice real.
 
 ## Configuración
 

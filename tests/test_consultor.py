@@ -58,3 +58,8 @@ def test_stream_sends_context_and_question(
     content = stub_ollama.messages[0][0]["content"]
     assert "<docs source=" in content
     assert content.endswith("Pregunta: función número 3")
+
+
+def test_retrieve_accepts_a_custom_limit(consultor: Consultor) -> None:
+    assert len(consultor.retrieve("función número", k=8)) == 8
+    assert len(consultor.retrieve("función número", k=2)) == 2

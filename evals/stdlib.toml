@@ -1,0 +1,95 @@
+# Casos de referencia de ejemplo sobre la biblioteca estándar. Edítalos o crea los tuyos.
+#
+# Requisito:  uv run api index json pathlib asyncio shutil subprocess collections re
+# Uso:        uv run api eval evals/stdlib.toml            (-v para ver todos los casos)
+#
+# `expected` admite nombres exactos o patrones con `*` (p. ej. "library/os.txt#*").
+# Cada pregunta debería tener una única fuente que la responda sin ambigüedad.
+
+# --- Nombre cualificado en la pregunta ---------------------------------------------
+
+[[case]]
+category = "exacto"
+question = "¿Cómo uso json.dumps con indentación?"
+expected = ["json.dumps"]
+
+[[case]]
+category = "exacto"
+question = "¿Qué parámetros tiene asyncio.gather?"
+expected = ["asyncio.gather"]
+
+[[case]]
+category = "exacto"
+question = "¿Cómo funciona subprocess.run?"
+expected = ["subprocess.run"]
+
+[[case]]
+category = "exacto"
+question = "¿Qué hace shutil.copytree?"
+expected = ["shutil.copytree"]
+
+# --- Clase.método sin el módulo ----------------------------------------------------
+
+[[case]]
+category = "cualificado-parcial"
+question = "¿Qué devuelve Path.rglob?"
+expected = ["pathlib.Path.rglob"]
+
+[[case]]
+category = "cualificado-parcial"
+question = "¿Cómo se usa Counter.most_common?"
+expected = ["collections.Counter.most_common"]
+
+# --- Solo el nombre corto ----------------------------------------------------------
+
+[[case]]
+category = "nombre-simple"
+question = "¿Para qué sirve copytree?"
+expected = ["shutil.copytree"]
+
+[[case]]
+category = "nombre-simple"
+question = "¿Qué hace rglob?"
+expected = ["pathlib.Path.rglob"]
+
+[[case]]
+category = "nombre-simple"
+question = "¿Cómo uso most_common?"
+expected = ["collections.Counter.most_common"]
+
+# --- Descripción en lenguaje natural -----------------------------------------------
+
+[[case]]
+category = "descripcion"
+question = "buscar ficheros recursivamente dentro de un directorio"
+expected = ["pathlib.Path.rglob"]
+
+[[case]]
+category = "descripcion"
+question = "copiar un directorio completo con todo su contenido"
+expected = ["shutil.copytree"]
+
+[[case]]
+category = "descripcion"
+question = "ejecutar un comando externo y capturar su salida"
+expected = ["subprocess.run"]
+
+[[case]]
+category = "descripcion"
+question = "lanzar varias corrutinas a la vez y esperar todos los resultados"
+expected = ["asyncio.gather"]
+
+[[case]]
+category = "descripcion"
+question = "contar cuántas veces aparece cada elemento de una lista"
+expected = ["collections.Counter"]
+
+[[case]]
+category = "descripcion"
+question = "reemplazar texto que coincide con una expresión regular"
+expected = ["re.sub"]
+
+[[case]]
+category = "descripcion"
+question = "convertir un diccionario de Python a una cadena JSON"
+expected = ["json.dumps"]

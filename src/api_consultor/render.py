@@ -27,6 +27,7 @@ from rich.theme import Theme
 from typer import rich_utils
 
 from .config import SETTINGS
+from .evaluation import EvalReport
 from .store import Chunk, SourceInfo
 
 # Paleta Monokai
@@ -245,6 +246,78 @@ def show_sources_table(sources: Sequence[SourceInfo], title: str) -> None:
     for source in sources:
         table.add_row(source.package, source.version, f"{source.chunks:,}")
     console.print(_fit(table))
+
+
+# --- Evaluación ---------------------------------------------------------------
+
+
+def _score(value: float, *, percent: bool) -> Text:
+    """Valor coloreado según su calidad: verde >= 0,8; naranja >= 0,5; rosa el resto."""
+    style = "success" if value >= 0.8 else "warning" if value >= 0.5 else "error"
+    return Text(f"{value:.0%}" if percent else f"{value:.3f}", style=style)
+
+
+def show_evaluation(report: EvalReport, *, verbose: bool = False) -> None:
+    """Tabla de métricas (global y por categoría) y lista de casos fallidos."""
+    table = Table(
+        title="Evaluación de la recuperación",
+        title_style="title",
+        title_justify="left",
+        box=box.ROUNDED,
+        border_style="muted",
+        header_style=f"bold {FG}",
+    )
+    table.add_column("Categoría", style="info")
+    table.add_column("Casos", justify="right", style="muted")
+    for k in report.ks:
+        table.add_column(f"R@{k}", justify="right")
+    table.add_column("MRR", justify="right")
+    rows = [("global", report.metrics())]
+    if len(report.categories) > 1:
+        rows += [(name, report.metrics(name)) for name in report.categories]
+    for name, metrics in rows:
+        table.add_row(
+            name,
+            str(metrics.cases),
+            *(_score(metrics.recall[k], percent=True) for k in report.ks),
+            _score(metrics.mrr, percent=False),
+        )
+    console.print(_fit(table))
+
+    within = 5 if 5 in report.ks else report.ks[-1]
+    shown = list(report.results) if verbose else report.failures(within)
+    if not shown:
+        console.print(
+            Text(f"\n✔ Todos los casos aciertan en el top-{within}", style="success")
+        )
+        return
+    detail = Table(
+        title="Casos" if verbose else f"Fallos (fuera del top-{within})",
+        title_style="title",
+        title_justify="left",
+        box=box.ROUNDED,
+        border_style="muted",
+        header_style=f"bold {FG}",
+    )
+    detail.add_column("Rango", justify="right")
+    for name in ("Pregunta", "Esperado", "Primer resultado"):
+        detail.add_column(name, overflow="ellipsis", no_wrap=True)
+    for result in shown:
+        rank = result.rank
+        cell = (
+            Text("—", style="error")
+            if rank is None
+            else Text(str(rank), style="success" if rank <= within else "warning")
+        )
+        first = result.ranked[0] if result.ranked else "—"
+        detail.add_row(
+            cell,
+            result.case.question,
+            ", ".join(result.case.expected),
+            Text(first, style="muted"),
+        )
+    console.print()
+    console.print(_fit(detail))
 
 
 # --- Versión ------------------------------------------------------------------
