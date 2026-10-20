@@ -69,14 +69,16 @@ def collect(docs_dir: Path) -> dict[str, Files]:
 def _sections(text: str) -> Iterator[tuple[str, str]]:
     """Divide un texto en (título, cuerpo) usando sus encabezados."""
     lines = text.splitlines()
-    title, body = "", []
+    title: str = ""
+    body: list[str] = []
     in_fence = False
     i = 0
     while i < len(lines):
         line = lines[i]
         if line.lstrip().startswith("```"):
             in_fence = not in_fence
-        heading, step = None, 1
+        heading: str | None = None
+        step = 1
         if not in_fence:
             underline = lines[i + 1] if i + 1 < len(lines) else ""
             if (
@@ -87,12 +89,13 @@ def _sections(text: str) -> Iterator[tuple[str, str]]:
             ):
                 heading, step = line.strip(), 2
             elif match := _ATX.match(line):
-                heading = match.group(1)
+                heading = str(match.group(1))
         if heading is None:
             body.append(line)
         else:
             yield title, "\n".join(body)
-            title, body = heading, []
+            title = heading
+            body.clear()
         i += step
     yield title, "\n".join(body)
 
@@ -117,7 +120,8 @@ def _split(body: str, limit: int) -> Iterator[str]:
         for piece in _wrap(paragraph.strip("\n"), limit):
             if buffer and size + len(piece) > limit:
                 yield "\n\n".join(buffer)
-                buffer, size = [], 0
+                buffer.clear()
+                size = 0
             buffer.append(piece)
             size += len(piece) + 2
     if buffer:

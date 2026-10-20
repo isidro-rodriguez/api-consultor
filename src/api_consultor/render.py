@@ -3,8 +3,10 @@
 import shutil
 from collections.abc import Iterable, Sequence
 
+import pyfiglet
 from rich import box
-from rich.console import Console, RenderableType
+from rich.align import Align
+from rich.console import Console, Group, RenderableType
 from rich.constrain import Constrain
 from rich.live import Live
 from rich.markdown import Markdown
@@ -79,6 +81,11 @@ THEME = Theme(
     }
 )
 
+APP_NAME = "ApiConsultor"
+TAGLINE = "Consultor de APIs Python offline con Ollama y RAG"
+BANNER_FONT = "slant"
+_RAINBOW = (RED, ORANGE, YELLOW, GREEN, BLUE, PURPLE)
+
 console = Console(theme=THEME, highlight=False)
 err_console = Console(theme=THEME, highlight=False, stderr=True)
 
@@ -87,18 +94,22 @@ def style_typer_help() -> None:
     """Aplica la paleta y el ancho máximo a la ayuda que genera Typer."""
     width = min(SETTINGS.console_width, shutil.get_terminal_size().columns)
     rich_utils.MAX_WIDTH = width
-    rich_utils.STYLE_OPTION = f"bold {RED}"
-    rich_utils.STYLE_SWITCH = f"bold {GREEN}"
-    rich_utils.STYLE_USAGE = ORANGE
-    rich_utils.STYLE_USAGE_COMMAND = f"bold {FG}"
-    rich_utils.STYLE_COMMANDS_TABLE_FIRST_COLUMN = f"bold {GREEN}"
-    rich_utils.STYLE_OPTIONS_PANEL_BORDER = COMMENT
-    rich_utils.STYLE_COMMANDS_PANEL_BORDER = COMMENT
-    rich_utils.STYLE_ERRORS_PANEL_BORDER = RED
-    rich_utils.STYLE_ERRORS_SUGGESTION = f"italic {COMMENT}"
-    rich_utils.STYLE_REQUIRED_SHORT = RED
-    rich_utils.STYLE_REQUIRED_LONG = f"dim {RED}"
-    rich_utils.STYLE_OPTION_DEFAULT = f"dim {YELLOW}"
+    styles = {
+        "STYLE_OPTION": f"bold {RED}",
+        "STYLE_SWITCH": f"bold {GREEN}",
+        "STYLE_USAGE": ORANGE,
+        "STYLE_USAGE_COMMAND": f"bold {FG}",
+        "STYLE_COMMANDS_TABLE_FIRST_COLUMN": f"bold {GREEN}",
+        "STYLE_OPTIONS_PANEL_BORDER": COMMENT,
+        "STYLE_COMMANDS_PANEL_BORDER": COMMENT,
+        "STYLE_ERRORS_PANEL_BORDER": RED,
+        "STYLE_ERRORS_SUGGESTION": f"italic {COMMENT}",
+        "STYLE_REQUIRED_SHORT": RED,
+        "STYLE_REQUIRED_LONG": f"dim {RED}",
+        "STYLE_OPTION_DEFAULT": f"dim {YELLOW}",
+    }
+    for name, style in styles.items():
+        setattr(rich_utils, name, style)  # constantes tipadas como Literal en Typer
 
 
 def _fit(renderable: RenderableType) -> RenderableType:
@@ -117,7 +128,7 @@ def _message(
     target: Console, symbol: str, style: str, text: str, hint: str | None
 ) -> None:
     target.print(_fit(Text.assemble((f"{symbol} ", style), text)))
-    if hint:
+    if hint is not None:
         target.print(_fit(Text(f"  {hint}", style="muted")))
 
 
@@ -234,3 +245,49 @@ def show_sources_table(sources: Sequence[SourceInfo], title: str) -> None:
     for source in sources:
         table.add_row(source.package, source.version, f"{source.chunks:,}")
     console.print(_fit(table))
+
+
+# --- Versión ------------------------------------------------------------------
+
+
+def _banner(max_width: int) -> RenderableType:
+    """Nombre de la app en figlet, una línea de la paleta por fila de texto."""
+    lines = (
+        pyfiglet.figlet_format(APP_NAME, font=BANNER_FONT, width=200)
+        .rstrip()
+        .splitlines()
+    )
+    width = max(len(line) for line in lines)
+    if width > max_width:  # terminal muy estrecha: sin arte
+        return Align.center(Text(APP_NAME, style=f"bold {GREEN}"))
+    art = Text(no_wrap=True)
+    for index, line in enumerate(lines):
+        art.append(line.ljust(width), style=_RAINBOW[index % len(_RAINBOW)])
+        if index < len(lines) - 1:
+            art.append("\n")
+    return Align.center(art)
+
+
+def show_version(version: str, details: Sequence[tuple[str, str]]) -> None:
+    """Panel con el banner, la versión y datos del entorno."""
+    available = min(console.width, SETTINGS.console_width) - 6  # borde + relleno
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(style="muted", justify="right")
+    grid.add_column(style=FG)
+    for label, value in details:
+        grid.add_row(label, value)
+    body = Group(
+        _banner(available),
+        Align.center(Text(TAGLINE, style="muted")),
+        Text(),
+        Align.center(grid),
+    )
+    panel = Panel(
+        body,
+        title=Text(f" v{version} ", style="title"),
+        title_align="right",
+        border_style="muted",
+        box=box.ROUNDED,
+        padding=(1, 2),
+    )
+    console.print(_fit(panel))

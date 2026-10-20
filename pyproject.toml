@@ -2,10 +2,14 @@
 name = "api-consultor"
 version = "0.1.0"
 description = "Consultor de APIs Python offline con Ollama y RAG"
+readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "ollama>=0.5.1",
+    "pyfiglet>=1.0",
+    "rich>=15.0.0",
     "sqlite-vec>=0.1.6",
+    "typer>=0.27.3",
 ]
 
 [project.scripts]
@@ -13,9 +17,11 @@ api = "api_consultor.cli:app"
 
 [dependency-groups]
 dev = [
-    "rich>=15.0.0",
+    "pre-commit>=4.0",
+    "pytest>=8.0",
+    "pytest-cov>=6.0",
     "ruff",
-    "typer>=0.27.3",
+    "ty",
 ]
 
 [build-system]
@@ -23,4 +29,30 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM"]
+select = [
+    "E", "F", "I", "UP", "B", "SIM",
+    "ANN",  # anotaciones de tipo obligatorias
+    "PT",   # buenas prácticas de pytest
+    "PTH",  # pathlib en lugar de os.path
+    "RUF",
+]
+
+[tool.ty.environment]
+python-version = "3.12"
+
+[tool.ty.src]
+include = ["src", "tests"]
+
+[tool.ty.rules]
+all = "error"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config --cov=api_consultor --cov-report=term-missing:skip-covered"
+
+[tool.coverage.run]
+branch = true
+source = ["api_consultor"]
+
+[tool.coverage.report]
+fail_under = 90

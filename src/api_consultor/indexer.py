@@ -1,5 +1,6 @@
 """Extrae firmas y docstrings de paquetes instalados y los convierte en chunks."""
 
+import contextlib
 import importlib
 import importlib.metadata
 import inspect
@@ -30,10 +31,10 @@ def _header(qualname: str, obj: object) -> str:
     if inspect.ismodule(obj):
         return f"module {qualname}"
     kind = "class" if inspect.isclass(obj) else "def"
-    try:
-        signature = str(inspect.signature(obj))  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        signature = "(...)"
+    signature = "(...)"
+    if callable(obj):
+        with contextlib.suppress(TypeError, ValueError):  # builtins sin firma
+            signature = str(inspect.signature(obj))
     return f"{kind} {qualname}{signature}"
 
 
@@ -52,7 +53,7 @@ def _walk_modules(package: str) -> Iterator[ModuleType]:
             continue
         try:
             yield importlib.import_module(info.name)
-        except Exception:  # noqa: BLE001 - código de terceros: cualquier fallo vale
+        except Exception:  # código de terceros: cualquier fallo vale
             log.warning("No se pudo importar %s", info.name)
 
 
@@ -89,7 +90,7 @@ def extract_chunks(package: str) -> list[Chunk]:
 
     def add(qualname: str, obj: object) -> None:
         doc = inspect.getdoc(obj)
-        if not doc or id(obj) in seen:
+        if doc is None or not doc.strip() or id(obj) in seen:
             return
         seen.add(id(obj))
         content = f"{_header(qualname, obj)}\n\n{doc}"[:MAX_CHARS]

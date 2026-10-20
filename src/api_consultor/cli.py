@@ -1,17 +1,21 @@
 """Interfaz de línea de comandos (Typer)."""
 
 import logging
-from collections.abc import Callable, Iterator, Sequence
+import platform
+import sqlite3
+from collections.abc import Callable, Generator, Iterator, Sequence
 from contextlib import contextmanager
 from functools import partial
 from pathlib import Path
 from typing import Annotated, NoReturn
 
 import ollama
+import sqlite_vec
 import typer
 from rich.logging import RichHandler
 from rich.progress import Progress
 
+from . import __version__
 from .config import SETTINGS
 from .consultor import Consultor
 from .docs import collect, extract_doc_chunks
@@ -26,6 +30,7 @@ from .render import (
     prompt,
     show_sources,
     show_sources_table,
+    show_version,
     status,
     stream_markdown,
     style_typer_help,
@@ -44,8 +49,34 @@ app = typer.Typer(
 )
 
 
+def _version_details() -> list[tuple[str, str]]:
+    return [
+        ("Python", platform.python_version()),
+        ("SQLite", f"{sqlite3.sqlite_version} · sqlite-vec {sqlite_vec.__version__}"),
+        ("Modelo", SETTINGS.chat_model),
+        ("Embeddings", SETTINGS.embed_model),
+    ]
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        show_version(__version__, _version_details())
+        raise typer.Exit
+
+
 @app.callback()
-def _setup() -> None:
+def _setup(
+    version: Annotated[
+        bool,
+        typer.Option(
+            "--version",
+            "-V",
+            callback=_version_callback,
+            is_eager=True,
+            help="Muestra la versión y termina.",
+        ),
+    ] = False,
+) -> None:
     # Avisos de logging (p. ej. módulos que no se pueden importar) con estilo Rich.
     logging.basicConfig(
         level=logging.WARNING,
@@ -60,7 +91,7 @@ def _fail(message: str, hint: str | None = None) -> NoReturn:
 
 
 @contextmanager
-def _ollama_errors() -> Iterator[None]:
+def _ollama_errors() -> Generator[None]:
     """Convierte los fallos típicos de Ollama en mensajes legibles."""
     try:
         yield
@@ -210,8 +241,9 @@ def ask(
                 "Usa `api index <paquete>` o `api index-docs`.",
             )
         consultor = Consultor(store)
+        interactive = question is None or not question.strip()
         questions: Sequence[str] | Iterator[str] = (
-            [question] if question else _read_questions()
+            _read_questions() if interactive else [question]
         )
         with _ollama_errors():
             for text in questions:

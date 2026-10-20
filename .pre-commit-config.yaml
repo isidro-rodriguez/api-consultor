@@ -1,0 +1,49 @@
+# Instalación (una vez por clon):  uv run pre-commit install
+#   - pre-commit: higiene de ficheros, ruff y ty en cada commit.
+#   - pre-push:   ruff, ty y pytest (con cobertura mínima) antes de cada push.
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
+minimum_pre_commit_version: "4.0.0"
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-toml
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=500]
+
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.13.1
+    hooks:
+      - id: uv-lock # falla si uv.lock no coincide con pyproject.toml
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.1
+    hooks:
+      - id: ruff-check
+        args: [--fix, --exit-non-zero-on-fix]
+        stages: [pre-commit, pre-push]
+      - id: ruff-format
+        stages: [pre-commit, pre-push]
+
+  - repo: local
+    hooks:
+      - id: ty
+        name: ty (tipado estricto)
+        entry: uv run --locked ty check
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit, pre-push]
+      - id: pytest
+        name: pytest (cobertura mínima 90 %)
+        entry: uv run --locked pytest -q
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
