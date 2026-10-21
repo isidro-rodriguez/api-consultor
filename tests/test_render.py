@@ -148,6 +148,7 @@ def test_show_sources_links_names_when_a_link_is_given(
         theme=render.THEME,
         force_terminal=True,
         color_system="standard",
+        legacy_windows=False,  # el modo heredado de Windows no emite hipervínculos
     )
     monkeypatch.setattr(render, "console", out)
     chunks = [Chunk("a.f", "a", "1", "x", "/p/a.py", 3), Chunk("a.g", "a", "1", "y")]
@@ -167,12 +168,13 @@ def test_show_sources_without_links_has_no_hint(capture: Capture) -> None:
 def test_show_user_config_marks_custom_values(capture: Capture) -> None:
     buffer = capture(100)
     rows = [("retrieval.k", "3", True), ("display.width", "90", False)]
-    render.show_user_config(rows, Path("/x/config.toml"), exists=False)
+    path = Path("/x/config.toml")
+    render.show_user_config(rows, path, exists=False)
     text = buffer.getvalue()
     assert "retrieval.k" in text
     assert "config.toml" in text
     assert "por defecto" in text
-    assert "Fichero: /x/config.toml (no existe)" in text
+    assert f"Fichero: {path} (no existe)" in text
 
 
 TRICKY = "a.md#[/bold] [red]x[/red] [tool.ruff]"

@@ -608,7 +608,7 @@ def show_status_table(
     table.add_column("Fuente", style="info")
     table.add_column("Indexada", style="muted")
     table.add_column("Instalada", style=FG)
-    table.add_column("Estado")
+    table.add_column("Estado", no_wrap=True)
     table.add_column("Fragmentos", justify="right", style="success")
     table.add_column("Fecha", style="muted")
     for entry in statuses:

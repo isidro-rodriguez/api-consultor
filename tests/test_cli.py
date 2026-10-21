@@ -1,4 +1,5 @@
 import platform
+import re
 import zipfile
 from pathlib import Path
 
@@ -36,8 +37,10 @@ def indexed(docs: Path, stub_ollama: StubOllama) -> StubOllama:
 def test_help_lists_all_commands() -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
+    # En GitHub Actions Typer fuerza los colores ANSI, que parten `--version`.
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
     for command in ("index", "index-docs", "ask", "sources", "--version"):
-        assert command in result.output
+        assert command in plain
 
 
 def test_version_flag_shows_panel() -> None:
