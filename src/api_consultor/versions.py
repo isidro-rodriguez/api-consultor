@@ -5,8 +5,10 @@ import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from importlib import metadata
+from pathlib import Path
 
-from .store import SourceInfo
+from .external import ProbeError, is_own, remote_versions
+from .records import SourceInfo
 
 UNKNOWN = "desconocida"
 """Versión que se registra cuando no se puede averiguar la del paquete."""
@@ -51,7 +53,8 @@ class VersionStatus:
         installed: Versión instalada ahora, si procede.
         state: `"ok"`, `"stale"` (versión distinta), `"missing"` (ya no está
             instalada), `"unknown"` (se indexó sin versión) o `"docs"`
-            (documentación: nada que comparar).
+            (documentación: nada que comparar), `"gone"` (ya no existe el entorno
+            o la carpeta donde estaba).
     """
 
     source: SourceInfo
@@ -64,8 +67,38 @@ class VersionStatus:
         return self.state == "stale"
 
 
+def _state(source: SourceInfo, installed: str | None) -> str:
+    if installed is None:
+        return "missing"
+    if source.version == UNKNOWN:
+        return "unknown"
+    return "ok" if installed == source.version else "stale"
+
+
+def _foreign_versions(
+    sources: Sequence[SourceInfo],
+) -> dict[str, dict[str, str | None]]:
+    """Versiones instaladas en los entornos ajenos; vacío si el entorno ya no está."""
+    wanted: dict[str, list[str]] = {}
+    for source in sources:
+        if source.kind == "package" and not is_own(source.python):
+            wanted.setdefault(source.python, []).append(source.package)
+    found: dict[str, dict[str, str | None]] = {}
+    for python, names in wanted.items():
+        if not Path(python).is_file():
+            continue
+        try:
+            found[python] = remote_versions(python, names)
+        except ProbeError:
+            continue
+    return found
+
+
 def check_versions(sources: Sequence[SourceInfo]) -> list[VersionStatus]:
-    """Compara cada fuente indexada con lo instalado en el entorno.
+    """Compara cada fuente indexada con lo instalado en su entorno.
+
+    Los paquetes indexados con `--python` se comparan con ese entorno, no con el de
+    la herramienta. Una fuente cuyo entorno o carpeta ya no existe queda `"gone"`.
 
     Args:
         sources: Fuentes del índice.
@@ -75,20 +108,21 @@ def check_versions(sources: Sequence[SourceInfo]) -> list[VersionStatus]:
     """
     distributions = (
         metadata.packages_distributions()
-        if any(source.kind == "package" for source in sources)
+        if any(s.kind == "package" and is_own(s.python) for s in sources)
         else {}
     )
+    foreign = _foreign_versions(sources)
     statuses: list[VersionStatus] = []
     for source in sources:
         if source.kind != "package":
-            statuses.append(VersionStatus(source, None, "docs"))
-            continue
-        installed = installed_version(source.package, distributions)
-        if installed is None:
-            state = "missing"
-        elif source.version == UNKNOWN:
-            state = "unknown"
+            gone = bool(source.root) and not Path(source.root).is_dir()
+            statuses.append(VersionStatus(source, None, "gone" if gone else "docs"))
+        elif is_own(source.python):
+            installed = installed_version(source.package, distributions)
+            statuses.append(VersionStatus(source, installed, _state(source, installed)))
+        elif source.python not in foreign:
+            statuses.append(VersionStatus(source, None, "gone"))
         else:
-            state = "ok" if installed == source.version else "stale"
-        statuses.append(VersionStatus(source, installed, state))
+            installed = foreign[source.python].get(source.package)
+            statuses.append(VersionStatus(source, installed, _state(source, installed)))
     return statuses

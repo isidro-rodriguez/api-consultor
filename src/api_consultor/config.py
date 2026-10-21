@@ -40,6 +40,11 @@ def default_db_path() -> Path:
     return user_data_dir() / "consultor.db"
 
 
+def default_docs_dir() -> Path:
+    """Devuelve la carpeta por defecto de la documentación local del usuario."""
+    return user_data_dir() / "docs"
+
+
 @dataclass(slots=True)
 class Settings:
     """Parámetros de la aplicación.
@@ -64,7 +69,7 @@ class Settings:
     embed_model: str = "bge-m3"
     embed_dim: int = 1024
     db_path: Path = field(default_factory=default_db_path)
-    docs_dir: Path = Path("docs")
+    docs_dir: Path = field(default_factory=default_docs_dir)
     retrieval_k: int = 5
     retrieval_candidates: int = 30
     max_per_symbol: int = 2

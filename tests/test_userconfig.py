@@ -1,4 +1,5 @@
 import re
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ from api_consultor.userconfig import (
     OPTIONS,
     UserConfig,
     UserConfigError,
+    chunk_file,
     chunk_link,
     config_path,
     create,
@@ -18,7 +20,13 @@ from api_consultor.userconfig import (
     template,
 )
 
-CHUNK = Chunk("a.f", "a", "1", "x", str(Path("/tmp/mi proyecto/a.py").resolve()), 42)
+
+@pytest.fixture
+def chunk(tmp_path: Path) -> Chunk:
+    file = tmp_path / "mi proyecto" / "a.py"
+    file.parent.mkdir()
+    file.write_text("x = 1\n", encoding="utf-8")
+    return Chunk("a.f", "a", "1", "x", str(file), 42)
 
 
 def write(path: Path, text: str) -> None:
@@ -127,31 +135,44 @@ def test_table_that_is_not_a_table_is_reported(isolated_user_config: Path) -> No
         load()
 
 
-def test_default_link_is_a_file_uri() -> None:
-    url = chunk_link(UserConfig(), CHUNK)
+def test_default_link_is_a_file_uri(chunk: Chunk) -> None:
+    url = chunk_link(UserConfig(), chunk)
     assert url is not None
     assert url.startswith("file://")
 
 
-def test_custom_link_encodes_spaces_and_line() -> None:
+def test_custom_link_encodes_spaces_and_line(chunk: Chunk) -> None:
     config = UserConfig(link="vscode://file/{path}:{line}")
-    url = chunk_link(config, CHUNK)
+    url = chunk_link(config, chunk)
     assert url is not None
     assert url.startswith("vscode://file/")
     assert url.endswith("a.py:42")
     assert "%20" in url
 
 
-def test_line_is_never_below_one() -> None:
-    chunk = Chunk("a", "a", "1", "x", CHUNK.path, 0)
-    url = chunk_link(UserConfig(link="{line}"), chunk)
+def test_line_is_never_below_one(chunk: Chunk) -> None:
+    url = chunk_link(UserConfig(link="{line}"), replace(chunk, line=0))
     assert url == "1"
 
 
-def test_no_link_without_a_usable_path() -> None:
+def test_relative_paths_resolve_against_the_source_root(
+    chunk: Chunk, tmp_path: Path
+) -> None:
+    relative = replace(chunk, path="mi proyecto/a.py")
+    assert chunk_file(str(tmp_path), relative) == tmp_path / "mi proyecto" / "a.py"
+    assert chunk_link(UserConfig(link="{line}"), relative, str(tmp_path)) == "42"
+
+
+def test_no_link_when_the_file_no_longer_exists(chunk: Chunk, tmp_path: Path) -> None:
+    gone = replace(chunk, path="no/existe.py")
+    assert chunk_file(str(tmp_path), gone) == tmp_path / "no" / "existe.py"
+    assert chunk_link(UserConfig(), gone, str(tmp_path)) is None
+
+
+def test_no_link_without_a_usable_path(chunk: Chunk) -> None:
     assert chunk_link(UserConfig(), Chunk("a", "a", "1", "x")) is None
     assert chunk_link(UserConfig(), Chunk("a", "a", "1", "x", "relativa.py", 1)) is None
-    assert chunk_link(UserConfig(link=""), CHUNK) is None
+    assert chunk_link(UserConfig(link=""), chunk) is None
 
 
 def test_effective_lists_every_option_and_flags_custom_ones(

@@ -5,7 +5,7 @@ import platform
 import shutil
 import sqlite3
 import subprocess
-from collections.abc import Callable, Generator, Iterator, Sequence
+from collections.abc import Callable, Generator, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from functools import partial
 from importlib.resources import as_file
@@ -22,11 +22,13 @@ from . import __version__
 from .citations import check_citations
 from .config import SETTINGS
 from .consultor import Consultor, format_context
-from .docs import Files, collect, extract_doc_chunks, materialize
+from .docs import Files, collect, extract_doc_chunks, import_docs, materialize
 from .evaluation import DEFAULT_KS, evaluate, load_cases, missing_sources
-from .indexer import extract_chunks
+from .external import ProbeError, extract_remote, is_own, resolve_interpreter
+from .indexer import extract_package
 from .llm import embed
 from .models import base_model, has_model, installed_models, modelfile
+from .records import Chunk, Extraction, SourceInfo, relativize
 from .render import (
     err_console,
     print_error,
@@ -45,10 +47,11 @@ from .render import (
     stream_markdown,
     style_typer_help,
 )
-from .store import Chunk, IndexIntegrityError, SourceInfo, Store
+from .store import IndexIntegrityError, Store
 from .userconfig import (
     UserConfig,
     UserConfigError,
+    chunk_file,
     chunk_link,
     config_path,
     create,
@@ -162,16 +165,17 @@ def _index_source(
     store: Store,
     progress: Progress,
     name: str,
-    build: Callable[[], list[Chunk]],
+    build: Callable[[], Extraction],
     kind: str = "package",
 ) -> SourceInfo | None:
     """Extrae los chunks de una fuente, calcula sus embeddings y los guarda."""
     task = progress.add_task(name, total=None)  # barra "pulsante" mientras se extrae
     try:
-        chunks = build()
+        extraction = build()
     except Exception:
         progress.remove_task(task)
         raise
+    chunks = extraction.chunks
     if not chunks:
         progress.remove_task(task)
         print_warning(f"{name}: nada indexable.")
@@ -184,23 +188,44 @@ def _index_source(
         if start == 0:
             store.check_vector(embeddings[0])  # falla pronto si el modelo no encaja
         progress.update(task, completed=len(embeddings))
-    store.replace(name, chunks, embeddings, kind)
-    return SourceInfo(name, chunks[0].version, len(chunks), kind)
+    store.replace(
+        name, chunks, embeddings, kind, root=extraction.root, python=extraction.python
+    )
+    return SourceInfo(
+        name,
+        chunks[0].version,
+        len(chunks),
+        kind,
+        root=extraction.root,
+        python=extraction.python,
+    )
 
 
-def _index_packages(store: Store, packages: Sequence[str]) -> list[SourceInfo]:
+def _index_packages(
+    store: Store, packages: Sequence[str], python: str = ""
+) -> list[SourceInfo]:
+    """Indexa paquetes del entorno de la herramienta o, con `python`, de otro."""
+    remote = not is_own(python)
     results: list[SourceInfo] = []
     with progress_bar() as progress, _handled_errors():
         for package in packages:
+            build = (
+                partial(extract_remote, python, package)
+                if remote
+                else partial(extract_package, package)
+            )
             try:
-                info = _index_source(
-                    store, progress, package, partial(extract_chunks, package)
-                )
+                info = _index_source(store, progress, package, build)
             except ModuleNotFoundError as exc:
+                where = f"en {python}" if remote else "en el entorno de la herramienta"
                 print_warning(
                     f"{package}: módulo no encontrado ({exc.name}).",
-                    f"¿Está instalado en el entorno? Prueba `uv add --dev {package}`.",
+                    f"¿Está instalado {where}? "
+                    "Indica el entorno del proyecto con `--python .venv`.",
                 )
+                continue
+            except ProbeError as exc:
+                print_warning(f"{package}: {exc}")
                 continue
             except (ImportError, ValueError, TypeError) as exc:  # rota o inválido
                 print_warning(f"{package}: no se pudo importar ({exc}).")
@@ -220,10 +245,27 @@ def index(
             show_default=False,
         ),
     ],
+    python: Annotated[
+        Path | None,
+        typer.Option(
+            "--python",
+            "-p",
+            metavar="ENTORNO",
+            help="Entorno virtual (o su Python) donde están instalados; "
+            "por defecto, el de la herramienta.",
+            show_default=False,
+        ),
+    ] = None,
 ) -> None:
     """Indexa paquetes Python instalados (firmas y docstrings)."""
+    interpreter = ""
+    if python is not None:
+        try:
+            interpreter = str(resolve_interpreter(python))
+        except FileNotFoundError as exc:
+            _fail(str(exc), "Indica la carpeta del entorno (`.venv`) o su Python.")
     with _store() as store:
-        results = _index_packages(store, packages)
+        results = _index_packages(store, packages, interpreter)
     show_sources_table(results, "Indexado")
 
 
@@ -234,9 +276,10 @@ def _docs_cache() -> Path:
 
 def _doc_chunks(
     directory: Path, source: str, files: Files, exclude: Sequence[str]
-) -> list[Chunk]:
+) -> Extraction:
     root = materialize(directory, source, _docs_cache(), exclude)
-    return extract_doc_chunks(source, files, exclude, root)
+    chunks = relativize(extract_doc_chunks(source, files, exclude, root), root)
+    return Extraction(chunks, str(root))
 
 
 @app.command("index-docs")
@@ -247,7 +290,8 @@ def index_docs(
             metavar="DIRECTORIO",
             exists=True,
             file_okay=False,
-            help="Carpeta con .txt, .md, .rst o .zip (por defecto, la configurada).",
+            help="Carpeta con .txt, .md, .rst o .zip (por defecto, la de documentación "
+            "del usuario).",
             show_default=False,
         ),
     ] = None,
@@ -260,11 +304,24 @@ def index_docs(
             help="Patrón fnmatch de ruta a omitir (repetible), p. ej. 'whatsnew/*'.",
         ),
     ] = None,
+    copy: Annotated[
+        bool | None,
+        typer.Option(
+            "--copy/--no-copy",
+            help="Copiar (o no) la documentación a la carpeta del usuario sin "
+            "preguntar.",
+            show_default=False,
+        ),
+    ] = None,
 ) -> None:
     """Indexa documentación local (.txt, .md, .rst; sueltos, en carpetas o en .zip)."""
     directory = directory or SETTINGS.docs_dir
     if not directory.is_dir():
-        _fail(f"No existe la carpeta de documentación: {directory}.")
+        _fail(
+            f"No existe la carpeta de documentación: {directory}.",
+            "Copia ahí tu documentación o indica otra: `api index-docs <carpeta>`.",
+        )
+    directory = _offer_copy(directory, copy=copy)
     results: list[SourceInfo] = []
     with _store() as store, progress_bar() as progress, _handled_errors():
         for source, files in collect(directory).items():
@@ -272,6 +329,29 @@ def index_docs(
             if info := _index_source(store, progress, source, build, "docs"):
                 results.append(info)
     show_sources_table(results, "Indexado")
+
+
+def _offer_copy(directory: Path, *, copy: bool | None) -> Path:
+    """Ofrece copiar la documentación a la carpeta del usuario y devuelve la efectiva.
+
+    Allí no se pierde si se mueve o borra el original. No pregunta si ya está dentro
+    de esa carpeta (o la contiene).
+    """
+    target = SETTINGS.docs_dir
+    source, home = directory.resolve(), target.resolve()
+    if source == home or source.is_relative_to(home) or home.is_relative_to(source):
+        return directory
+    if copy is None:
+        copy = typer.confirm(
+            f"¿Copiar la documentación a {target} para conservarla aunque muevas "
+            "o borres el original?",
+            default=True,
+        )
+    if not copy:
+        return directory
+    copied = import_docs(directory, target)
+    print_hint(f"Copiados {copied} elementos a {target}.")
+    return target
 
 
 def _read_questions() -> Iterator[str]:
@@ -300,11 +380,18 @@ def _warn_stale(store: Store) -> frozenset[str]:
     return frozenset(s.source.package for s in stale)
 
 
+def _is_unavailable(chunk: Chunk, roots: Mapping[str, str]) -> bool:
+    """Indica si el fichero de un fragmento ya no está donde se indexó."""
+    file = chunk_file(roots.get(chunk.package, ""), chunk)
+    return file is not None and not file.exists()
+
+
 def _answer(
     consultor: Consultor,
     question: str,
     stale: frozenset[str],
     config: UserConfig,
+    roots: Mapping[str, str],
     *,
     debug: bool = False,
 ) -> None:
@@ -322,7 +409,11 @@ def _answer(
     answer = stream_markdown(consultor.stream(question, retrieval.chunks))
     citations = check_citations(answer, len(retrieval.chunks))
     show_sources(
-        retrieval.chunks, stale, citations, link=lambda c: chunk_link(config, c)
+        retrieval.chunks,
+        stale,
+        citations,
+        link=lambda c: chunk_link(config, c, roots.get(c.package, "")),
+        unavailable=lambda c: _is_unavailable(c, roots),
     )
 
 
@@ -350,6 +441,7 @@ def ask(
                 "Usa `api index <paquete>` o `api index-docs`.",
             )
         stale = _warn_stale(store)
+        roots = {source.package: source.root for source in store.sources()}
         consultor = Consultor(store)
         interactive = question is None or not question.strip()
         questions: Sequence[str] | Iterator[str] = (
@@ -357,7 +449,7 @@ def ask(
         )
         with _handled_errors():
             for text in questions:
-                _answer(consultor, text, stale, ctx.obj, debug=debug)
+                _answer(consultor, text, stale, ctx.obj, roots, debug=debug)
 
 
 @app.command()
@@ -375,11 +467,22 @@ def sources(
     yes: Annotated[
         bool, typer.Option("--yes", "-y", help="Eliminar sin pedir confirmación.")
     ] = False,
+    relocate: Annotated[
+        tuple[str, Path] | None,
+        typer.Option(
+            "--relocate",
+            metavar="FUENTE CARPETA",
+            help="Indica la nueva carpeta de una fuente movida, sin reindexar.",
+            show_default=False,
+        ),
+    ] = None,
 ) -> None:
-    """Lista las fuentes indexadas (y opcionalmente elimina alguna)."""
+    """Lista las fuentes indexadas (y opcionalmente elimina o recoloca alguna)."""
     with _store(check_model=False) as store:
         if remove is not None:
             _remove_sources(store, remove, yes=yes)
+        if relocate is not None:
+            _relocate_source(store, *relocate)
         statuses = check_versions(store.sources())
         meta = store.meta()
     if not statuses:
@@ -391,6 +494,24 @@ def sources(
         f"formato {meta.get('format_version', '?')}"
     )
     show_status_table(statuses, "Fuentes indexadas", caption)
+
+
+def _relocate_source(store: Store, name: str, folder: Path) -> None:
+    """Apunta una fuente a otra carpeta si allí están sus ficheros."""
+    if name not in {source.package for source in store.sources()}:
+        _fail(f"Fuente no indexada: {name}.")
+    root = folder.expanduser().resolve()
+    if not root.is_dir():
+        _fail(f"No existe la carpeta {root}.")
+    paths = store.paths(name)
+    found = sum((root / path).exists() for path in paths)
+    if paths and not found:
+        _fail(
+            f"No encuentro en {root} ningún fichero de {name} (p. ej. {paths[0]}).",
+            "Indica la carpeta que contiene esa estructura.",
+        )
+    store.relocate(name, str(root))
+    print_hint(f"{name} ahora apunta a {root} ({found} de {len(paths)} ficheros).")
 
 
 def _remove_sources(store: Store, names: list[str], *, yes: bool) -> None:
@@ -471,7 +592,10 @@ def update(
         show_status_table(stale, "Fuentes obsoletas")
         if not yes and not typer.confirm("¿Reindexarlas ahora?"):
             raise typer.Exit(code=1)
-        results = _index_packages(store, [s.source.package for s in stale])
+        results: list[SourceInfo] = []
+        for python in dict.fromkeys(s.source.python for s in stale):
+            names = [s.source.package for s in stale if s.source.python == python]
+            results += _index_packages(store, names, python)
     show_sources_table(results, "Reindexado")
 
 

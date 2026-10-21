@@ -30,6 +30,9 @@ declares terminada una tarea que no hayas ejecutado.
 | --------------- | ----------------------------------------------------------------------------------------------- |
 | `cli.py`        | Comandos Typer, orquestación y errores de Ollama. Sin lógica de dominio.                        |
 | `indexer.py`    | Extrae chunks de paquetes instalados (`inspect`), por secciones sin truncar.                    |
+| `records.py`    | `Chunk`, `SourceInfo`, `Extraction`: solo stdlib (los carga también `probe.py`).                |
+| `external.py`   | Lado de la app para `--python`: resuelve el intérprete y lanza `probe.py`.                      |
+| `probe.py`      | Guion stdlib que corre con el Python de otro entorno (extrae chunks/versiones; JSON).           |
 | `docs.py`       | Lee `.txt`/`.md`/`.rst` (sueltos, carpetas, `.zip`) y los trocea por secciones.                 |
 | `store.py`      | SQLite + `sqlite-vec` + FTS5 + metadatos (`meta`, `sources`); valida modelo y dimensión.        |
 | `consultor.py`  | RAG: `retrieve()` (nombres + FTS5 + vectorial, fusión RRF) y `stream()`.                        |
@@ -75,6 +78,10 @@ Nada imprime fuera de `render.py`. `src/api_consultor/Modelfile` (empaquetado) d
 - El formato del índice está versionado (`FORMAT_VERSION` en `store.py`). Todo cambio de
   esquema debe migrar solo al abrir (sin reindexar) y llevar un test con un índice
   «antiguo» simulado (ver `test_a_legacy_index_gets_sources_inferred_from_its_chunks`).
+- Las rutas de `chunks.path` son relativas a `sources.root`; `sources.python` guarda el
+  intérprete de un paquete indexado con `--python`. `probe.py`, `indexer.py`, `docs.py`,
+  `versions.py`, `external.py` y `records.py` deben seguir siendo stdlib-only y sin
+  importar `store`/`cli`, porque la sonda los carga en el entorno ajeno.
 - Nunca insertes ni consultes vectores sin validar su dimensión (`Store.check_vector`).
 - Un cambio de `embed_model`/`embed_dim` invalida el índice: se detecta y se pide
   reconstruirlo; no lo hagas tú sobre el índice real.
@@ -129,5 +136,8 @@ la recuperación.
    - Almacenaje de configuración persistente en directorio correspondiente (si se considera útil)
    - Almacenaje de la base de datos en dicho directorio
    - Objetivo: `api ask "¿Cuáles son los tipos de datos en Python?"` en cualquier punto
+   - Hecho: `uv tool install`, `api setup`, `Modelfile` empaquetado, datos y docs en la
+     carpeta del usuario, formato de índice 4 (rutas relativas + raíz), `--python`,
+     `--relocate`.
 10. Repositorio PyPi
 11. CI de Github (windows, linux, publicación en pypi) y dependabot

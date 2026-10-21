@@ -261,6 +261,7 @@ def show_sources(
     stale: Collection[str] = (),
     citations: Citations | None = None,
     link: Callable[[Chunk], str | None] | None = None,
+    unavailable: Callable[[Chunk], bool] | None = None,
 ) -> None:
     """Panel con los fragmentos usados, su identificador y si la respuesta los citó.
 
@@ -273,11 +274,13 @@ def show_sources(
         stale: Fuentes cuya versión instalada difiere de la indexada.
         citations: Citas de la respuesta, si se han comprobado.
         link: Función que da la URL de un fragmento (o `None` si no tiene).
+        unavailable: Función que dice si el fichero de un fragmento ya no existe.
     """
     if not chunks:
         return
     cited = set(citations.valid) if citations else set()
     linked = False
+    missing = False
     grid = Table.grid(padding=(0, 2))
     grid.add_column(no_wrap=True)
     grid.add_column(style="info", overflow="fold")
@@ -297,12 +300,23 @@ def show_sources(
             name.stylize(Style(link=url, underline=True), 0)
             name.stylize("accent", 0)
             linked = True
+        elif unavailable is not None and unavailable(chunk):
+            name.append(" (fichero no disponible)", style="warning")
+            missing = True
         grid.add_row(mark, name, origin)
     panel = Panel(
         grid,
         title="Fuentes",
         title_align="left",
-        subtitle="Ctrl+clic en una fuente para abrirla" if linked else None,
+        subtitle=" · ".join(
+            hint
+            for hint, shown in (
+                ("Ctrl+clic en una fuente para abrirla", linked),
+                ("Revisa `api sources`: hay ficheros que ya no existen", missing),
+            )
+            if shown
+        )
+        or None,
         subtitle_align="right",
         border_style="muted",
         box=box.ROUNDED,
@@ -566,6 +580,7 @@ _STATE_LABELS = {
     "missing": ("no instalada", "muted"),
     "unknown": ("? sin versión", "muted"),
     "docs": ("docs", "muted"),
+    "gone": ("✘ no encontrada", "error"),
 }
 
 

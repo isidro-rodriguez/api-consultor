@@ -61,6 +61,7 @@ def restore_settings(tmp_path: Path) -> Generator[None]:
     """
     snapshot = dataclasses.replace(SETTINGS)
     SETTINGS.db_path = tmp_path / "data" / "consultor.db"
+    SETTINGS.docs_dir = tmp_path / "docs"
     yield
     for item in dataclasses.fields(snapshot):
         setattr(SETTINGS, item.name, getattr(snapshot, item.name))

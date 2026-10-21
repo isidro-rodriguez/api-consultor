@@ -3,7 +3,6 @@
 import re
 import sqlite3
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
@@ -11,8 +10,14 @@ from typing import Self
 
 import sqlite_vec
 
-FORMAT_VERSION = 3
-"""Formato del índice: 1 sin metadatos, 2 con `meta`/`sources`, 3 con `path`/`line`."""
+from .records import Chunk, SourceInfo
+
+FORMAT_VERSION = 4
+"""Formato del índice.
+
+1 sin metadatos, 2 con `meta`/`sources`, 3 con `path`/`line`, 4 con rutas relativas
+a la raíz de la fuente y `root`/`python` en `sources`.
+"""
 
 
 class IndexIntegrityError(Exception):
@@ -31,44 +36,29 @@ class IndexIntegrityError(Exception):
         self.hint = hint
 
 
-@dataclass(frozen=True, slots=True)
-class Chunk:
-    """Fragmento indexado: un símbolo de una API o una sección de documentación.
+def _guess_root(name: str, kind: str, rows: list[tuple[int, str, str]]) -> str | None:
+    """Deduce la raíz de una fuente de un índice anterior a partir de sus rutas.
 
-    Attributes:
-        qualname: Nombre único dentro de la fuente (`pkg.mod.func`, `ruta.md#Título`).
-        package: Fuente a la que pertenece (paquete o carpeta/zip de documentación).
-        version: Versión de la fuente cuando se indexó.
-        content: Texto que se vectoriza y se envía al modelo.
-        path: Fichero de origen enlazable; vacío si no existe (builtins).
-        line: Línea del símbolo o sección en `path`; 0 si se desconoce.
+    Para un paquete es la carpeta que contiene su directorio (o su módulo); para
+    documentación, lo que queda al quitar la ruta relativa que recuerda el nombre.
     """
-
-    qualname: str
-    package: str
-    version: str
-    content: str
-    path: str = ""
-    line: int = 0
-
-
-@dataclass(frozen=True, slots=True)
-class SourceInfo:
-    """Resumen de una fuente indexada.
-
-    Attributes:
-        package: Nombre de la fuente.
-        version: Versión registrada al indexar.
-        chunks: Número de fragmentos.
-        kind: `"package"` (API de un paquete) o `"docs"` (documentación).
-        indexed_at: Fecha ISO de indexado (no cuenta en la comparación).
-    """
-
-    package: str
-    version: str
-    chunks: int
-    kind: str = "package"
-    indexed_at: str = field(default="", compare=False)
+    for _row_id, qualname, raw in rows:
+        path = Path(raw)
+        if not path.is_absolute():
+            continue
+        if kind == "docs":
+            relative = re.sub(r" \[\d+\]$", "", qualname.split("#", 1)[0])
+            posix = path.as_posix()
+            if posix.endswith("/" + relative):
+                return posix[: -len(relative) - 1] or "/"
+            continue
+        top = name.split(".", 1)[0]
+        for parent in path.parents:
+            if parent.name == top:
+                return str(parent.parent)
+        if path.stem == top:
+            return str(path.parent)
+    return None
 
 
 _COLUMNS = "qualname, package, version, content, path, line"
@@ -139,7 +129,9 @@ class Store:
                 name TEXT PRIMARY KEY,
                 kind TEXT NOT NULL,
                 version TEXT NOT NULL,
-                indexed_at TEXT NOT NULL
+                indexed_at TEXT NOT NULL,
+                root TEXT NOT NULL DEFAULT '',
+                python TEXT NOT NULL DEFAULT ''
             );
         """)
         with self._db:
@@ -151,6 +143,7 @@ class Store:
                 self._db.execute(
                     "ALTER TABLE chunks ADD COLUMN line INTEGER NOT NULL DEFAULT 0"
                 )
+            self._migrate_roots()
             if "chunks_fts" not in existing:  # índice anterior a la búsqueda léxica
                 self._db.execute(
                     "INSERT INTO chunks_fts(rowid, qualname, content) "
@@ -165,6 +158,35 @@ class Store:
                     "FROM chunks GROUP BY package"
                 )
         self._check_and_record_meta(dim, model)
+
+    def _migrate_roots(self) -> None:
+        """Pasa un índice anterior al formato 4: raíz por fuente y rutas relativas."""
+        columns = {row[1] for row in self._db.execute("PRAGMA table_info(sources)")}
+        if "root" in columns:
+            return
+        self._db.execute("ALTER TABLE sources ADD COLUMN root TEXT NOT NULL DEFAULT ''")
+        self._db.execute(
+            "ALTER TABLE sources ADD COLUMN python TEXT NOT NULL DEFAULT ''"
+        )
+        for name, kind in self._db.execute("SELECT name, kind FROM sources").fetchall():
+            rows = self._db.execute(
+                "SELECT id, qualname, path FROM chunks "
+                "WHERE package = ? AND path != ''",
+                (name,),
+            ).fetchall()
+            root = _guess_root(name, kind, rows)
+            if root is None:
+                continue  # las rutas absolutas siguen funcionando
+            self._db.execute("UPDATE sources SET root = ? WHERE name = ?", (root, name))
+            base = Path(root)
+            self._db.executemany(
+                "UPDATE chunks SET path = ? WHERE id = ?",
+                [
+                    (Path(path).relative_to(base).as_posix(), row_id)
+                    for row_id, _qualname, path in rows
+                    if Path(path).is_absolute() and Path(path).is_relative_to(base)
+                ],
+            )
 
     def _check_stored_dimension(self, dim: int) -> None:
         row = self._db.execute(
@@ -248,6 +270,9 @@ class Store:
         chunks: Sequence[Chunk],
         embeddings: Sequence[Sequence[float]],
         kind: str = "package",
+        *,
+        root: str = "",
+        python: str = "",
     ) -> None:
         """Sustituye todo lo indexado de una fuente (reindexado idempotente).
 
@@ -259,6 +284,8 @@ class Store:
             chunks: Fragmentos nuevos.
             embeddings: Un embedding por fragmento, en el mismo orden.
             kind: `"package"` o `"docs"`.
+            root: Carpeta a la que son relativas las rutas de los fragmentos.
+            python: Intérprete del entorno indexado; vacío si es el de la herramienta.
 
         Raises:
             IndexIntegrityError: Si algún embedding no tiene la dimensión del índice.
@@ -298,9 +325,10 @@ class Store:
                 )
             if chunks:
                 self._db.execute(
-                    "INSERT OR REPLACE INTO sources(name, kind, version, indexed_at) "
-                    "VALUES (?, ?, ?, ?)",
-                    (package, kind, chunks[0].version, _now()),
+                    "INSERT OR REPLACE INTO sources"
+                    "(name, kind, version, indexed_at, root, python) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (package, kind, chunks[0].version, _now(), root, python),
                 )
             else:
                 self._db.execute("DELETE FROM sources WHERE name = ?", (package,))
@@ -308,11 +336,44 @@ class Store:
     def sources(self) -> list[SourceInfo]:
         """Lista las fuentes indexadas, por nombre, con su número de fragmentos."""
         rows = self._db.execute(
-            "SELECT s.name, s.version, COUNT(c.id), s.kind, s.indexed_at "
+            "SELECT s.name, s.version, COUNT(c.id), s.kind, s.indexed_at, "
+            "s.root, s.python "
             "FROM sources AS s LEFT JOIN chunks AS c ON c.package = s.name "
             "GROUP BY s.name ORDER BY s.name"
         )
         return [SourceInfo(*row) for row in rows]
+
+    def paths(self, package: str) -> list[str]:
+        """Lista los ficheros (rutas relativas) de los que salen los fragmentos.
+
+        Args:
+            package: Nombre de la fuente.
+
+        Returns:
+            Rutas distintas y ordenadas; vacío si la fuente no tiene ubicaciones.
+        """
+        rows = self._db.execute(
+            "SELECT DISTINCT path FROM chunks WHERE package = ? AND path != '' "
+            "ORDER BY path",
+            (package,),
+        )
+        return [row[0] for row in rows]
+
+    def relocate(self, package: str, root: str) -> bool:
+        """Cambia la carpeta raíz de una fuente sin reindexar.
+
+        Args:
+            package: Nombre de la fuente.
+            root: Nueva carpeta que contiene sus ficheros.
+
+        Returns:
+            `True` si la fuente existe.
+        """
+        with self._db:
+            cur = self._db.execute(
+                "UPDATE sources SET root = ? WHERE name = ?", (root, package)
+            )
+        return cur.rowcount > 0
 
     def remove(self, package: str) -> int:
         """Elimina una fuente con todos sus fragmentos.

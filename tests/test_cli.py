@@ -402,7 +402,9 @@ def test_index_docs_extracts_zips_so_their_chunks_have_a_file(
     assert (cache / "guia.md").is_file()
     with Store(SETTINGS.db_path, EMBED_DIM) as store:
         chunk = store.by_name(["guia.md#Uso"])[0]
-    assert chunk.path == str((cache / "guia.md").resolve())
+        [source] = [s for s in store.sources() if s.package == "manual-1.0"]
+    assert chunk.path == "guia.md"
+    assert Path(source.root) == cache.resolve()
     assert chunk.line == 5
 
 

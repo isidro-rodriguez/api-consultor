@@ -12,7 +12,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from .config import APP_DIR, Settings
-from .store import Chunk
+from .records import Chunk
 
 ENV_VAR = "API_CONSULTOR_CONFIG"
 """Variable de entorno con una ruta alternativa a `config.toml` (también para tests)."""
@@ -225,19 +225,37 @@ def _validate_link(config: UserConfig) -> None:
         ) from exc
 
 
-def chunk_link(config: UserConfig, chunk: Chunk) -> str | None:
+def chunk_file(root: str, chunk: Chunk) -> Path | None:
+    """Calcula la ruta absoluta del fichero de un fragmento.
+
+    Args:
+        root: Carpeta raíz de la fuente (`SourceInfo.root`).
+        chunk: Fragmento con la ruta relativa a esa raíz (o absoluta).
+
+    Returns:
+        La ruta, o `None` si el fragmento no tiene fichero o no se puede resolver.
+    """
+    if not chunk.path:
+        return None
+    path = Path(root) / chunk.path  # una ruta absoluta sustituye a la raíz
+    return path if path.is_absolute() else None
+
+
+def chunk_link(config: UserConfig, chunk: Chunk, root: str = "") -> str | None:
     """Construye el hiperenlace de terminal a la ubicación de un fragmento.
 
     Args:
         config: Preferencias con la plantilla de enlace.
         chunk: Fragmento del que se quiere el enlace.
+        root: Carpeta raíz de su fuente.
 
     Returns:
-        La URL, o `None` si el fragmento no tiene un fichero con ruta absoluta.
+        La URL, o `None` si el fragmento no tiene fichero o este ya no existe.
     """
-    if not chunk.path or not Path(chunk.path).is_absolute():
+    file = chunk_file(root, chunk)
+    if file is None or not file.exists():
         return None
-    url = config.link.format(**_fields(chunk.path, chunk.line))
+    url = config.link.format(**_fields(str(file), chunk.line))
     return url if url else None
 
 

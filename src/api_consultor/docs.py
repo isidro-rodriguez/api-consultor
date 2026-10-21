@@ -8,7 +8,7 @@ from collections.abc import Iterator, Sequence
 from fnmatch import fnmatch
 from pathlib import Path
 
-from .store import Chunk
+from .records import Chunk
 
 SUFFIXES = frozenset({".txt", ".md", ".rst"})
 """Extensiones de los ficheros de documentación que se indexan."""
@@ -97,6 +97,39 @@ def collect(docs_dir: Path) -> dict[str, Files]:
     if loose:
         sources["docs"] = loose
     return sources
+
+
+def import_docs(source: Path, target: Path) -> int:
+    """Copia a `target` las entradas de `source` que `collect` trataría como fuentes.
+
+    Se omiten las ocultas (`.git`...). Lo que ya exista con el mismo nombre se
+    sobrescribe.
+
+    Args:
+        source: Carpeta con la documentación original.
+        target: Carpeta de destino (se crea si no existe).
+
+    Returns:
+        Cuántas entradas (carpetas o ficheros) se copiaron.
+    """
+    target.mkdir(parents=True, exist_ok=True)
+    copied = 0
+    for entry in sorted(source.iterdir()):
+        if entry.name.startswith("."):
+            continue
+        if entry.is_dir():
+            shutil.copytree(
+                entry,
+                target / entry.name,
+                dirs_exist_ok=True,
+                ignore=shutil.ignore_patterns(".*"),
+            )
+        elif entry.suffix.lower() in {".zip", *SUFFIXES}:
+            shutil.copy2(entry, target / entry.name)
+        else:
+            continue
+        copied += 1
+    return copied
 
 
 def materialize(

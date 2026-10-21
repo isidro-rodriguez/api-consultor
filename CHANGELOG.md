@@ -13,8 +13,22 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   del paquete y el nuevo comando `api setup` descarga los modelos y crea `api-consultor`
   (idempotente).
 
+- `api index --python ENTORNO`: indexa paquetes instalados en el venv de un proyecto
+  (no solo en el de la herramienta). Se hace con una sonda que corre con el Python de
+  ese entorno; cada fuente recuerda su intérprete y `api update` y el aviso de versión
+  obsoleta lo respetan.
+- `api sources --relocate FUENTE CARPETA` recoloca una fuente movida sin reindexar.
+- `api sources` marca como «no encontrada» una fuente cuyo venv o carpeta ya no existe;
+  el panel de `api ask` indica «fichero no disponible» y no pone enlace.
+- `api index-docs` ofrece copiar la documentación a la carpeta del usuario
+  (`--copy` / `--no-copy` para no preguntar).
+
 ### Cambiado
 
+- La documentación local se busca por defecto en `<carpeta de datos>/docs` (antes
+  `./docs`). Para el comportamiento anterior: `[paths] docs = "docs"` en `config.toml`.
+- Formato de índice 4: las rutas de los fragmentos son relativas a la raíz de la fuente
+  (`sources.root`). Un índice anterior se migra solo al abrirlo.
 - La base de datos se guarda por defecto en la carpeta de datos del usuario, no en
   `data/` del proyecto. Para conservar la anterior: moverla allí o fijar
   `[paths] db = "data/consultor.db"` en `config.toml`.

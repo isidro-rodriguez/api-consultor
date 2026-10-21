@@ -6,13 +6,14 @@ import importlib.metadata
 import inspect
 import logging
 import pkgutil
+import sys
 from collections.abc import Collection, Iterator
 from functools import cached_property
 from pathlib import Path
 from types import ModuleType
 
 from .docs import sections, split_text
-from .store import Chunk
+from .records import Chunk, Extraction, relativize
 from .versions import UNKNOWN, installed_version
 
 log = logging.getLogger(__name__)
@@ -229,3 +230,33 @@ def extract_chunks(package: str) -> list[Chunk]:
                 for method_name, method in _public_methods(obj, package, public):
                     add(f"{qualname}.{method_name}", method)
     return chunks
+
+
+def _package_root(package: str) -> Path | None:
+    """Carpeta que contiene el paquete (o el módulo) importado, si es de ficheros."""
+    module = sys.modules.get(package)
+    file = getattr(module, "__file__", None)
+    if file is None:  # espacios de nombres, builtins o módulos congelados
+        return None
+    path = Path(file).resolve()
+    return path.parent.parent if path.stem == "__init__" else path.parent
+
+
+def extract_package(package: str) -> Extraction:
+    """Extrae los chunks de un paquete con rutas relativas a su carpeta contenedora.
+
+    Args:
+        package: Nombre importable del paquete.
+
+    Returns:
+        Los chunks y la raíz (`site-packages`, `Lib`...) de la que cuelgan sus ficheros.
+
+    Raises:
+        ModuleNotFoundError: Si el paquete no está instalado.
+        ImportError: Si el paquete (no sus submódulos) falla al importarse.
+    """
+    chunks = extract_chunks(package)
+    root = _package_root(package)
+    if root is None:
+        return Extraction(chunks)
+    return Extraction(relativize(chunks, root), str(root))
