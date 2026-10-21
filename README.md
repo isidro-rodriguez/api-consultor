@@ -5,7 +5,7 @@ y ficheros de documentación (`.txt`, `.md`, `.rst`, `.zip`) en una base SQLite 
 responde preguntas con un LLM que corre en tu máquina mediante
 [Ollama](https://ollama.com). Pensado para GPUs de gama media (8 GB de VRAM).
 
-```
+```text
 paquetes instalados / docs/ ──► fragmentos ──► embeddings (bge-m3) ──► SQLite + sqlite-vec
                                                                              │
 pregunta ──► nombres + palabras (FTS5) + vectorial ──► fusión RRF ◄──────────┘
@@ -35,7 +35,8 @@ uv run api index-docs                   # contenido de docs/ (zip, carpetas, fic
 uv run api index-docs -x 'whatsnew/*'   # omitiendo rutas (patrones fnmatch)
 uv run api ask "¿cómo hago un POST con timeout?"
 uv run api ask                          # modo interactivo
-uv run api sources                      # qué hay indexado
+uv run api sources                      # qué hay indexado y si está al día
+uv run api update                       # reindexa los paquetes que han cambiado de versión
 uv run api eval evals/stdlib.toml       # mide la calidad de la recuperación
 uv run api --version
 ```
@@ -45,6 +46,19 @@ uv run api --version
 - `docs/` admite, por ejemplo, el zip de texto de la documentación de Python
   (<https://docs.python.org/3/download.html>). Está ignorado por git.
 - La base de datos vive en `data/consultor.db` (también ignorada).
+
+## Integridad del índice
+
+El índice (`data/consultor.db`) registra el modelo y la dimensión de los embeddings, el
+formato y, por fuente, su tipo, versión y fecha de indexado.
+
+- Si cambias `embed_model` o `embed_dim`, la CLI se niega a insertar o consultar vectores
+  incompatibles y explica cómo reconstruir el índice (borrar `data/consultor.db`).
+- Al preguntar, avisa si un paquete indexado ya no coincide con la versión instalada y
+  marca esas fuentes en el panel de resultados. `api update` reindexa solo esas.
+- La versión se resuelve por la distribución instalada (`yaml` → PyYAML) y, para la
+  biblioteca estándar, es la de Python. La documentación (`docs/`) no se compara.
+- Un índice anterior se migra solo al abrirlo; se asume creado con el modelo configurado.
 
 ## Evaluar la recuperación
 
@@ -87,5 +101,4 @@ uv run pytest
 - La calidad de las respuestas depende de la documentación disponible: los símbolos sin
   docstring no se indexan.
 - Los fragmentos de APIs Python se truncan a 2000 caracteres.
-- Si cambia la versión de un paquete, hay que reindexarlo a mano: no se detecta.
 - No hay umbral de relevancia: siempre se responde con lo recuperado.

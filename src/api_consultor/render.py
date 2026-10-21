@@ -1,7 +1,7 @@
 """Presentación en consola: tema Monokai, Markdown en streaming, tablas y avisos."""
 
 import shutil
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 
 import pyfiglet
 from rich import box
@@ -29,6 +29,7 @@ from typer import rich_utils
 from .config import SETTINGS
 from .evaluation import EvalReport
 from .store import Chunk, SourceInfo
+from .versions import VersionStatus
 
 # Paleta Monokai
 FG = "#F8F8F2"
@@ -186,8 +187,8 @@ def stream_markdown(tokens: Iterable[str]) -> None:
     console.print(_markdown(buffer))
 
 
-def show_sources(chunks: Sequence[Chunk]) -> None:
-    """Panel con los fragmentos usados para responder."""
+def show_sources(chunks: Sequence[Chunk], stale: Collection[str] = ()) -> None:
+    """Panel con los fragmentos usados; marca los de fuentes con versión obsoleta."""
     if not chunks:
         return
     grid = Table.grid(padding=(0, 2))
@@ -196,7 +197,10 @@ def show_sources(chunks: Sequence[Chunk]) -> None:
     for chunk in chunks:
         numbered = chunk.version[:1].isdigit() and chunk.version not in chunk.package
         version = f" v{chunk.version}" if numbered else ""
-        grid.add_row(chunk.qualname, f"{chunk.package}{version}")
+        origin = Text(f"{chunk.package}{version}", style="muted")
+        if chunk.package in stale:
+            origin.append(" ⚠ obsoleta", style="warning")
+        grid.add_row(chunk.qualname, origin)
     panel = Panel(
         grid,
         title="Fuentes",
@@ -365,3 +369,47 @@ def show_version(version: str, details: Sequence[tuple[str, str]]) -> None:
         padding=(1, 2),
     )
     console.print(_fit(panel))
+
+
+_STATE_LABELS = {
+    "ok": ("✔ al día", "success"),
+    "stale": ("⚠ obsoleta", "warning"),
+    "missing": ("no instalada", "muted"),
+    "unknown": ("? sin versión", "muted"),
+    "docs": ("docs", "muted"),
+}
+
+
+def show_status_table(
+    statuses: Sequence[VersionStatus], title: str, caption: str | None = None
+) -> None:
+    """Fuentes indexadas con su versión instalada y si están al día."""
+    table = Table(
+        title=title,
+        title_style="title",
+        title_justify="left",
+        caption=caption,
+        caption_style="muted",
+        caption_justify="left",
+        box=box.ROUNDED,
+        border_style="muted",
+        header_style=f"bold {FG}",
+    )
+    table.add_column("Fuente", style="info")
+    table.add_column("Indexada", style="muted")
+    table.add_column("Instalada", style=FG)
+    table.add_column("Estado")
+    table.add_column("Fragmentos", justify="right", style="success")
+    table.add_column("Fecha", style="muted")
+    for status in statuses:
+        source = status.source
+        label, style = _STATE_LABELS[status.state]
+        table.add_row(
+            source.package,
+            source.version,
+            status.installed or "—",
+            Text(label, style=style),
+            f"{source.chunks:,}",
+            source.indexed_at[:10] or "—",
+        )
+    console.print(_fit(table))

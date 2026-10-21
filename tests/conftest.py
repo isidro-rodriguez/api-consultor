@@ -1,6 +1,7 @@
 """Fixtures comunes: aislamiento del sistema de ficheros y Ollama simulado."""
 
 import hashlib
+import importlib
 import math
 import re
 import sys
@@ -13,6 +14,7 @@ import pytest
 EMBED_DIM = 1024  # coincide con Settings.embed_dim (bge-m3)
 
 type PackageFactory = Callable[[str, dict[str, str]], str]
+type FakeDistribution = Callable[..., None]
 
 
 def hash_embedding(text: str, dim: int = EMBED_DIM) -> list[float]:
@@ -89,3 +91,26 @@ def make_package(
     yield factory
     for module in [m for m in sys.modules if m.split(".")[0] in created]:
         del sys.modules[module]
+
+
+@pytest.fixture
+def fake_distribution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> FakeDistribution:
+    """Instala distribuciones falsas (solo metadatos) en un directorio temporal."""
+    site = tmp_path / "site"
+    site.mkdir()
+    monkeypatch.syspath_prepend(str(site))
+
+    def factory(name: str, version: str, top_level: str | None = None) -> None:
+        info = site / f"{name}-{version}.dist-info"
+        info.mkdir()
+        (info / "METADATA").write_text(
+            f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n",
+            encoding="utf-8",
+        )
+        if top_level is not None:
+            (info / "top_level.txt").write_text(f"{top_level}\n", encoding="utf-8")
+        importlib.invalidate_caches()
+
+    return factory

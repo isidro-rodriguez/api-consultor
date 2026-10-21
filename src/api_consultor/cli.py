@@ -32,12 +32,14 @@ from .render import (
     show_evaluation,
     show_sources,
     show_sources_table,
+    show_status_table,
     show_version,
     status,
     stream_markdown,
     style_typer_help,
 )
-from .store import Chunk, SourceInfo, Store
+from .store import Chunk, IndexIntegrityError, SourceInfo, Store
+from .versions import check_versions
 
 BATCH_SIZE = 32
 
@@ -93,10 +95,24 @@ def _fail(message: str, hint: str | None = None) -> NoReturn:
 
 
 @contextmanager
-def _ollama_errors() -> Generator[None]:
-    """Convierte los fallos típicos de Ollama en mensajes legibles."""
+def _store(*, check_model: bool = True) -> Generator[Store]:
+    """Abre el índice; si no es compatible con la configuración, falla con claridad."""
+    model = SETTINGS.embed_model if check_model else None
+    try:
+        store = Store(SETTINGS.db_path, SETTINGS.embed_dim, model)
+    except IndexIntegrityError as exc:
+        _fail(str(exc), exc.hint)
+    with store:
+        yield store
+
+
+@contextmanager
+def _handled_errors() -> Generator[None]:
+    """Convierte los fallos típicos de Ollama y del índice en mensajes legibles."""
     try:
         yield
+    except IndexIntegrityError as exc:
+        _fail(str(exc), exc.hint)
     except ConnectionError:
         _fail(
             "No se pudo conectar con Ollama.",
@@ -117,6 +133,7 @@ def _index_source(
     progress: Progress,
     name: str,
     build: Callable[[], list[Chunk]],
+    kind: str = "package",
 ) -> SourceInfo | None:
     """Extrae los chunks de una fuente, calcula sus embeddings y los guarda."""
     task = progress.add_task(name, total=None)  # barra "pulsante" mientras se extrae
@@ -134,9 +151,30 @@ def _index_source(
     for start in range(0, len(chunks), BATCH_SIZE):
         batch = chunks[start : start + BATCH_SIZE]
         embeddings.extend(embed([chunk.content for chunk in batch]))
+        if start == 0:
+            store.check_vector(embeddings[0])  # falla pronto si el modelo no encaja
         progress.update(task, completed=len(embeddings))
-    store.replace(name, chunks, embeddings)
-    return SourceInfo(name, chunks[0].version, len(chunks))
+    store.replace(name, chunks, embeddings, kind)
+    return SourceInfo(name, chunks[0].version, len(chunks), kind)
+
+
+def _index_packages(store: Store, packages: Sequence[str]) -> list[SourceInfo]:
+    results: list[SourceInfo] = []
+    with progress_bar() as progress, _handled_errors():
+        for package in packages:
+            try:
+                info = _index_source(
+                    store, progress, package, partial(extract_chunks, package)
+                )
+            except ModuleNotFoundError as exc:
+                print_warning(
+                    f"{package}: módulo no encontrado ({exc.name}).",
+                    f"¿Está instalado en el entorno? Prueba `uv add --dev {package}`.",
+                )
+                continue
+            if info:
+                results.append(info)
+    return results
 
 
 @app.command()
@@ -151,25 +189,8 @@ def index(
     ],
 ) -> None:
     """Indexa paquetes Python instalados (firmas y docstrings)."""
-    results: list[SourceInfo] = []
-    with (
-        Store(SETTINGS.db_path, SETTINGS.embed_dim) as store,
-        progress_bar() as progress,
-        _ollama_errors(),
-    ):
-        for package in packages:
-            try:
-                info = _index_source(
-                    store, progress, package, partial(extract_chunks, package)
-                )
-            except ModuleNotFoundError as exc:
-                print_warning(
-                    f"{package}: módulo no encontrado ({exc.name}).",
-                    f"¿Está instalado en el entorno? Prueba `uv add --dev {package}`.",
-                )
-                continue
-            if info:
-                results.append(info)
+    with _store() as store:
+        results = _index_packages(store, packages)
     show_sources_table(results, "Indexado")
 
 
@@ -196,14 +217,10 @@ def index_docs(
 ) -> None:
     """Indexa documentación local (.txt, .md, .rst; sueltos, en carpetas o en .zip)."""
     results: list[SourceInfo] = []
-    with (
-        Store(SETTINGS.db_path, SETTINGS.embed_dim) as store,
-        progress_bar() as progress,
-        _ollama_errors(),
-    ):
+    with _store() as store, progress_bar() as progress, _handled_errors():
         for source, files in collect(directory).items():
             build = partial(extract_doc_chunks, source, files, exclude or ())
-            if info := _index_source(store, progress, source, build):
+            if info := _index_source(store, progress, source, build, "docs"):
                 results.append(info)
     show_sources_table(results, "Indexado")
 
@@ -219,11 +236,26 @@ def _read_questions() -> Iterator[str]:
             yield line
 
 
-def _answer(consultor: Consultor, question: str) -> None:
+def _warn_stale(store: Store) -> frozenset[str]:
+    """Avisa de las fuentes cuya versión instalada difiere de la indexada."""
+    stale = [s for s in check_versions(store.sources()) if s.is_stale]
+    if stale:
+        details = ", ".join(
+            f"{s.source.package} (indexada {s.source.version}, instalada {s.installed})"
+            for s in stale
+        )
+        print_warning(
+            f"Documentación posiblemente obsoleta: {details}.",
+            "Reindexa con `api update`.",
+        )
+    return frozenset(s.source.package for s in stale)
+
+
+def _answer(consultor: Consultor, question: str, stale: frozenset[str]) -> None:
     with status("Buscando en la documentación..."):
         chunks = consultor.retrieve(question)
     stream_markdown(consultor.stream(question, chunks))
-    show_sources(chunks)
+    show_sources(chunks, stale)
 
 
 @app.command()
@@ -236,31 +268,57 @@ def ask(
     ] = None,
 ) -> None:
     """Consulta lo indexado y responde con el modelo local."""
-    with Store(SETTINGS.db_path, SETTINGS.embed_dim) as store:
+    with _store() as store:
         if not store.sources():
             _fail(
                 "No hay nada indexado todavía.",
                 "Usa `api index <paquete>` o `api index-docs`.",
             )
+        stale = _warn_stale(store)
         consultor = Consultor(store)
         interactive = question is None or not question.strip()
         questions: Sequence[str] | Iterator[str] = (
             _read_questions() if interactive else [question]
         )
-        with _ollama_errors():
+        with _handled_errors():
             for text in questions:
-                _answer(consultor, text)
+                _answer(consultor, text, stale)
 
 
 @app.command()
 def sources() -> None:
-    """Lista las fuentes indexadas."""
-    with Store(SETTINGS.db_path, SETTINGS.embed_dim) as store:
-        rows = store.sources()
-    if rows:
-        show_sources_table(rows, "Fuentes indexadas")
-    else:
+    """Lista las fuentes indexadas y si siguen al día respecto a lo instalado."""
+    with _store(check_model=False) as store:
+        statuses = check_versions(store.sources())
+        meta = store.meta()
+    if not statuses:
         print_hint("Nada indexado todavía.")
+        return
+    caption = (
+        f"Embeddings: {meta.get('embed_model', 'sin registrar')} · "
+        f"{meta.get('embed_dim', '?')} dimensiones · "
+        f"formato {meta.get('format_version', '?')}"
+    )
+    show_status_table(statuses, "Fuentes indexadas", caption)
+
+
+@app.command()
+def update(
+    yes: Annotated[
+        bool, typer.Option("--yes", "-y", help="Reindexar sin pedir confirmación.")
+    ] = False,
+) -> None:
+    """Reindexa los paquetes cuya versión instalada difiere de la indexada."""
+    with _store() as store:
+        stale = [s for s in check_versions(store.sources()) if s.is_stale]
+        if not stale:
+            print_hint("Todas las fuentes están al día.")
+            return
+        show_status_table(stale, "Fuentes obsoletas")
+        if not yes and not typer.confirm("¿Reindexarlas ahora?"):
+            raise typer.Exit(code=1)
+        results = _index_packages(store, [s.source.package for s in stale])
+    show_sources_table(results, "Reindexado")
 
 
 @app.command("eval")
@@ -296,7 +354,7 @@ def eval_command(
             "Define tablas [[case]] con question y expected.",
         )
     ks = sorted({*(value for value in DEFAULT_KS if value < k), k})
-    with Store(SETTINGS.db_path, SETTINGS.embed_dim) as store:
+    with _store() as store:
         if not store.sources():
             _fail(
                 "No hay nada indexado todavía.",
@@ -311,7 +369,7 @@ def eval_command(
                 "¿Falta `api index <paquete>` o `api index-docs`?",
             )
         consultor = Consultor(store)
-        with progress_bar() as progress, _ollama_errors():
+        with progress_bar() as progress, _handled_errors():
             task = progress.add_task("Evaluando", total=len(loaded))
             report = evaluate(
                 consultor.retrieve,

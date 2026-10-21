@@ -15,9 +15,17 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 - Banco de regresión sintético (`tests/test_benchmark.py`) con suelos de calidad.
 - `api eval` avisa cuando las fuentes esperadas no están en el índice, y `expected`
   admite alternativas con `|` (API indexada o página de documentación).
+- Integridad del índice: metadatos (formato, modelo y dimensión de embeddings, fecha) y
+  tabla de fuentes con tipo, versión y fecha de indexado. Se rechazan modelos o
+  dimensiones incompatibles antes de insertar o consultar, con mensajes accionables.
+- `api sources` muestra la versión indexada frente a la instalada y el estado de cada
+  fuente; `api ask` avisa de las fuentes obsoletas y las marca en el panel de fuentes.
+- Comando `api update`: reindexa los paquetes cuya versión instalada ha cambiado.
 
 ### Cambiado
 
+- La versión de un paquete se resuelve por su distribución instalada (`yaml` → PyYAML),
+  no por el nombre del módulo; la biblioteca estándar usa la versión de Python.
 - `Consultor.retrieve()` acepta un límite opcional `k` (por defecto, `retrieval_k`).
 - Recuperación híbrida: a los nombres cualificados y la búsqueda vectorial se suman los
   nombres cortos de símbolos (`rglob`) y una búsqueda por palabras sobre el contenido

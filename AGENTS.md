@@ -26,16 +26,17 @@ declares terminada una tarea que no hayas ejecutado.
 
 ## Mapa del código (`src/api_consultor/`)
 
-| Módulo         | Responsabilidad                                                                                      |
-| -------------- | ---------------------------------------------------------------------------------------------------- |
-| `cli.py`       | Comandos Typer, orquestación y errores de Ollama. Sin lógica de dominio.                             |
-| `indexer.py`   | Extrae chunks de paquetes instalados (introspección con `inspect`).                                  |
-| `docs.py`      | Lee `.txt`/`.md`/`.rst` (sueltos, carpetas, `.zip`) y los trocea por secciones.                      |
-| `store.py`     | SQLite + `sqlite-vec` + FTS5: `replace`, `by_name`, `by_short_name`, `lexical`, `search`, `sources`. |
-| `consultor.py` | RAG: `retrieve()` (nombres + FTS5 + vectorial, fusión RRF) y `stream()`.                             |
-| `llm.py`       | Capa fina sobre el cliente de Ollama (`embed`, `stream_chat`).                                       |
-| `render.py`    | Toda la salida de consola: tema Monokai, Markdown, tablas, versión.                                  |
-| `config.py`    | `Settings` inmutable (modelos, rutas, `top_k`, ancho de consola).                                    |
+| Módulo          | Responsabilidad                                                                                      |
+| --------------- | ---------------------------------------------------------------------------------------------------- |
+| `cli.py`        | Comandos Typer, orquestación y errores de Ollama. Sin lógica de dominio.                             |
+| `indexer.py`    | Extrae chunks de paquetes instalados (introspección con `inspect`).                                  |
+| `docs.py`       | Lee `.txt`/`.md`/`.rst` (sueltos, carpetas, `.zip`) y los trocea por secciones.                      |
+| `store.py`      | SQLite + `sqlite-vec` + FTS5 + metadatos (`meta`, `sources`); valida modelo y dimensión.             |
+| `versions.py`   | Versión instalada (distribución ≠ módulo) y estado de cada fuente indexada.                          |
+| `evaluation.py` | Recall@k, MRR y carga de casos de `api eval`.                                                        |
+| `llm.py`        | Capa fina sobre el cliente de Ollama (`embed`, `stream_chat`).                                       |
+| `render.py`     | Toda la salida de consola: tema Monokai, Markdown, tablas, versión.                                  |
+| `config.py`     | `Settings` inmutable (modelos, rutas, `top_k`, ancho de consola).                                    |
 
 Nada imprime fuera de `render.py`. `Modelfile` define el modelo `api-consultor`.
 

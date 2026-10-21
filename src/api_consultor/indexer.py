@@ -6,12 +6,11 @@ import importlib.metadata
 import inspect
 import logging
 import pkgutil
-import platform
-import sys
 from collections.abc import Iterator
 from types import ModuleType
 
 from .store import Chunk
+from .versions import UNKNOWN, installed_version
 
 log = logging.getLogger(__name__)
 
@@ -19,12 +18,7 @@ MAX_CHARS = 2000  # ~500 tokens por chunk: 5 chunks caben de sobra en 8k de cont
 
 
 def _version(package: str) -> str:
-    if package in sys.stdlib_module_names:
-        return platform.python_version()
-    try:
-        return importlib.metadata.version(package)
-    except importlib.metadata.PackageNotFoundError:
-        return "desconocida"
+    return installed_version(package) or UNKNOWN
 
 
 def _header(qualname: str, obj: object) -> str:

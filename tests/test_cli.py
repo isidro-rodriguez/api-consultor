@@ -1,3 +1,4 @@
+import platform
 from pathlib import Path
 
 import ollama
@@ -6,8 +7,9 @@ from typer.testing import CliRunner
 
 from api_consultor import __version__
 from api_consultor.cli import app
+from api_consultor.store import Chunk, Store
 
-from .conftest import StubOllama
+from .conftest import EMBED_DIM, StubOllama, fake_embed
 
 runner = CliRunner()
 
@@ -131,3 +133,94 @@ def test_index_unknown_module_warns_and_continues(stub_ollama: StubOllama) -> No
     assert result.exit_code == 0, result.output
     assert "módulo no encontrado" in result.output
     assert "json" in result.output
+
+
+DB = Path("data/consultor.db")
+
+
+def seed_json_index(version: str, model: str = "bge-m3") -> None:
+    """Índice con un único paquete (`json`) indexado con la versión indicada."""
+    chunks = [Chunk("json.dumps", "json", version, "def json.dumps(obj)\n\nserializa")]
+    with Store(DB, EMBED_DIM, model) as store:
+        store.replace("json", chunks, fake_embed([c.content for c in chunks]))
+
+
+def test_sources_shows_state_versions_and_embedding_metadata(
+    indexed: StubOllama,
+) -> None:
+    seed_json_index("3.0.0")
+    result = runner.invoke(app, ["sources"])
+    assert result.exit_code == 0, result.output
+    assert "obsoleta" in result.output
+    assert "3.0.0" in result.output
+    assert "docs" in result.output
+    assert "Embeddings: bge-m3" in result.output
+    assert "1024 dimensiones" in result.output
+
+
+def test_ask_warns_about_stale_sources_and_marks_them(stub_ollama: StubOllama) -> None:
+    seed_json_index("3.0.0")
+    result = runner.invoke(app, ["ask", "json.dumps"])
+    assert result.exit_code == 0, result.output
+    assert "posiblemente obsoleta" in result.output
+    assert "api update" in result.output
+    assert "⚠ obsoleta" in result.output  # marca en el panel de fuentes
+    assert len(stub_ollama.messages) == 1
+
+
+def test_ask_does_not_warn_when_everything_is_current(stub_ollama: StubOllama) -> None:
+    seed_json_index(platform.python_version())
+    result = runner.invoke(app, ["ask", "json.dumps"])
+    assert "obsoleta" not in result.output
+
+
+def test_update_reindexes_only_stale_packages(stub_ollama: StubOllama) -> None:
+    seed_json_index("3.0.0")
+    result = runner.invoke(app, ["update", "--yes"])
+    assert result.exit_code == 0, result.output
+    assert "Reindexado" in result.output
+    after = runner.invoke(app, ["sources"])
+    assert "obsoleta" not in after.output
+    assert platform.python_version() in after.output
+
+
+def test_update_asks_for_confirmation(stub_ollama: StubOllama) -> None:
+    seed_json_index("3.0.0")
+    result = runner.invoke(app, ["update"], input="n\n")
+    assert result.exit_code == 1
+    assert "3.0.0" in runner.invoke(app, ["sources"]).output
+
+
+def test_update_reports_when_everything_is_current(stub_ollama: StubOllama) -> None:
+    seed_json_index(platform.python_version())
+    result = runner.invoke(app, ["update"])
+    assert result.exit_code == 0
+    assert "al día" in result.output
+
+
+def test_a_different_embedding_model_blocks_ask_but_not_sources(
+    stub_ollama: StubOllama,
+) -> None:
+    seed_json_index("3.0.0", model="otro-modelo")
+    blocked = runner.invoke(app, ["ask", "hola"])
+    assert blocked.exit_code == 1
+    assert "otro-modelo" in blocked.output
+    assert "reconstruye" in blocked.output
+    assert runner.invoke(app, ["sources"]).exit_code == 0
+
+
+def test_indexing_fails_early_when_the_model_dimension_does_not_match(
+    docs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "api_consultor.cli.embed", lambda texts: [[0.0] * 8 for _ in texts]
+    )
+    result = runner.invoke(app, ["index-docs"])
+    assert result.exit_code == 1
+    assert "8" in result.output
+    assert "dimensiones" in result.output
+
+
+def test_index_records_the_installed_version(stub_ollama: StubOllama) -> None:
+    assert runner.invoke(app, ["index", "json"]).exit_code == 0
+    assert platform.python_version() in runner.invoke(app, ["sources"]).output

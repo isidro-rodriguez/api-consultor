@@ -3,7 +3,13 @@ from pathlib import Path
 
 import pytest
 
-from api_consultor.store import Chunk, SourceInfo, Store
+from api_consultor.store import (
+    FORMAT_VERSION,
+    Chunk,
+    IndexIntegrityError,
+    SourceInfo,
+    Store,
+)
 
 DIM = 4
 
@@ -166,3 +172,103 @@ def test_by_short_name_ignores_generic_names(store: Store) -> None:
     store.replace("pkg", [chunk(n) for n in names], [[1.0, 0, 0, 0]] * 6)
     assert store.by_short_name(["get"], max_matches=5) == []
     assert len(store.by_short_name(["get"], max_matches=6)) == 6
+
+
+def test_open_records_index_metadata(tmp_path: Path) -> None:
+    with Store(tmp_path / "m.db", DIM, "modelo-a") as store:
+        meta = store.meta()
+    assert meta["embed_model"] == "modelo-a"
+    assert meta["embed_dim"] == str(DIM)
+    assert meta["format_version"] == str(FORMAT_VERSION)
+    assert meta["created_at"]
+
+
+def test_reopening_with_the_same_model_keeps_the_creation_date(tmp_path: Path) -> None:
+    with Store(tmp_path / "m.db", DIM, "modelo-a") as first:
+        created = first.meta()["created_at"]
+    with Store(tmp_path / "m.db", DIM, "modelo-a") as second:
+        assert second.meta()["created_at"] == created
+
+
+def test_a_different_embedding_model_is_rejected(tmp_path: Path) -> None:
+    Store(tmp_path / "m.db", DIM, "modelo-a").close()
+    with pytest.raises(IndexIntegrityError, match="modelo-a") as error:
+        Store(tmp_path / "m.db", DIM, "modelo-b")
+    assert "modelo-b" in str(error.value)
+    assert error.value.hint is not None
+
+
+def test_a_different_dimension_is_rejected(tmp_path: Path) -> None:
+    Store(tmp_path / "m.db", DIM, "modelo-a").close()
+    with pytest.raises(IndexIntegrityError, match="dimensiones"):
+        Store(tmp_path / "m.db", DIM * 2, "modelo-a")
+
+
+def test_opening_without_a_model_skips_the_model_check(tmp_path: Path) -> None:
+    Store(tmp_path / "m.db", DIM, "modelo-a").close()
+    with Store(tmp_path / "m.db", DIM) as store:
+        assert store.meta()["embed_model"] == "modelo-a"
+
+
+def test_an_index_without_model_adopts_the_configured_one(tmp_path: Path) -> None:
+    with Store(tmp_path / "m.db", DIM) as first:
+        assert "embed_model" not in first.meta()
+    with Store(tmp_path / "m.db", DIM, "modelo-a") as second:
+        assert second.meta()["embed_model"] == "modelo-a"
+
+
+def test_a_newer_index_format_is_rejected(tmp_path: Path) -> None:
+    Store(tmp_path / "m.db", DIM).close()
+    raw = sqlite3.connect(tmp_path / "m.db")
+    raw.execute("UPDATE meta SET value = '99' WHERE key = 'format_version'")
+    raw.commit()
+    raw.close()
+    with pytest.raises(IndexIntegrityError, match="formato 99"):
+        Store(tmp_path / "m.db", DIM)
+
+
+def test_replace_validates_vector_sizes_before_changing_anything(store: Store) -> None:
+    store.replace("pkg", [chunk("pkg.a")], [[1.0, 0, 0, 0]])
+    with pytest.raises(IndexIntegrityError, match="3 dimensiones"):
+        store.replace("pkg", [chunk("pkg.new")], [[1.0, 0, 0]])
+    assert [c.qualname for c in store.search([1.0, 0, 0, 0], 5)] == ["pkg.a"]
+
+
+def test_search_validates_the_query_vector_size(store: Store) -> None:
+    with pytest.raises(IndexIntegrityError, match="espera 4"):
+        store.search([1.0, 0], 3)
+
+
+def test_sources_record_kind_and_indexing_date(store: Store) -> None:
+    store.replace("pkg", [chunk("pkg.a")], [[1.0, 0, 0, 0]])
+    store.replace("notas", [chunk("a.md#T", "notas")], [[0, 1.0, 0, 0]], kind="docs")
+    packages, docs = store.sources()[1], store.sources()[0]
+    assert (docs.package, docs.kind) == ("notas", "docs")
+    assert (packages.package, packages.kind) == ("pkg", "package")
+    assert packages.indexed_at.startswith("20")
+
+
+def test_replacing_with_no_chunks_removes_the_source(store: Store) -> None:
+    store.replace("pkg", [chunk("pkg.a")], [[1.0, 0, 0, 0]])
+    store.replace("pkg", [], [])
+    assert store.sources() == []
+
+
+def test_a_legacy_index_gets_sources_inferred_from_its_chunks(tmp_path: Path) -> None:
+    path = tmp_path / "old.db"
+    with Store(path, DIM, "modelo-a") as first:
+        first.replace("pkg", [chunk("pkg.a", version="2.5")], [[1.0, 0, 0, 0]])
+        first.replace(
+            "notas", [chunk("a.md#T", "notas", "3.1")], [[0, 1.0, 0, 0]], kind="docs"
+        )
+    legacy = sqlite3.connect(path)
+    legacy.execute("DROP TABLE sources")
+    legacy.execute("DROP TABLE meta")
+    legacy.commit()
+    legacy.close()
+    with Store(path, DIM, "modelo-b") as migrated:
+        assert migrated.sources() == [
+            SourceInfo("notas", "3.1", 1, kind="docs"),
+            SourceInfo("pkg", "2.5", 1, kind="package"),
+        ]
+        assert migrated.meta()["embed_model"] == "modelo-b"

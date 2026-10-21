@@ -5,7 +5,7 @@ import pytest
 
 from api_consultor.indexer import extract_chunks
 
-from .conftest import PackageFactory
+from .conftest import FakeDistribution, PackageFactory
 
 FILES = {
     "__init__.py": '''
@@ -104,3 +104,11 @@ def test_stdlib_version_is_the_python_version() -> None:
     chunks = extract_chunks("json")
     assert chunks
     assert {chunk.version for chunk in chunks} == {platform.python_version()}
+
+
+def test_version_comes_from_the_distribution_not_the_import_name(
+    make_package: PackageFactory, fake_distribution: FakeDistribution
+) -> None:
+    package = make_package("yamlish", FILES)
+    fake_distribution("YamlLib", "2.0", top_level="yamlish")
+    assert {chunk.version for chunk in extract_chunks(package)} == {"2.0"}
