@@ -7,7 +7,10 @@ from rich.console import Console
 
 from api_consultor import render
 from api_consultor.citations import Citations
+from api_consultor.consultor import Candidate, Retrieval
+from api_consultor.evaluation import EvalCase, evaluate
 from api_consultor.store import Chunk, SourceInfo
+from api_consultor.versions import VersionStatus
 
 type Capture = Callable[[int], StringIO]
 
@@ -170,3 +173,25 @@ def test_show_user_config_marks_custom_values(capture: Capture) -> None:
     assert "config.toml" in text
     assert "por defecto" in text
     assert "Fichero: /x/config.toml (no existe)" in text
+
+
+TRICKY = "a.md#[/bold] [red]x[/red] [tool.ruff]"
+
+
+def test_data_that_looks_like_markup_is_printed_literally(capture: Capture) -> None:
+    """Títulos como `[tool.ruff]` no deben interpretarse como estilos de Rich."""
+    buffer = capture(160)
+    chunk = Chunk(TRICKY, "[red]pkg", "[1]", "x")
+    candidate = Candidate(chunk, 0.5, {"N": 1}, 0.1, selected=True)
+    render.show_debug(Retrieval([chunk], [candidate]), 10)
+    render.show_sources_table([SourceInfo("[red]pkg", "[1]", 1)], "T")
+    state = VersionStatus(SourceInfo("[red]pkg", "[1]", 1, "docs", ""), "[x]", "docs")
+    render.show_status_table([state], "T")
+    report = evaluate(lambda _q, _k: [chunk], [EvalCase(TRICKY, (TRICKY,))], (1,))
+    render.show_evaluation(report, verbose=True)
+    render.show_user_config([("[red]x", "[/y]", True)], Path("/p"), exists=True)
+    text = buffer.getvalue()
+    assert TRICKY in text
+    assert "[/bold]" in text
+    assert "[red]pkg" in text
+    assert "[/y]" in text

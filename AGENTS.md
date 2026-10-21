@@ -48,6 +48,9 @@ Nada imprime fuera de `render.py`. `Modelfile` define el modelo `api-consultor`.
   (si es inevitable, `# ty: ignore[regla]` con motivo).
 - Estilo pythónico y PEP 8/257/484/695; `pathlib` en lugar de `os.path`; `dataclass`
   con `frozen=True, slots=True` para datos; textos de usuario en español.
+- Docstrings estilo Google (`Args:`, `Returns:`, `Raises:`, `Yields:`, `Attributes:`) en
+  todo lo público, constantes incluidas (cadena justo tras la asignación); ruff (`D`) lo
+  exige. Los comandos Typer llevan una sola línea: es su texto de `--help`.
 - Dependencias nuevas solo si están justificadas; añádelas con `uv add` (runtime) o
   `uv add --dev` (desarrollo). `uv.lock` se versiona.
 - Commits convencionales (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`).

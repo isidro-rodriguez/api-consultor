@@ -8,7 +8,7 @@ from collections.abc import Callable, Generator, Iterator, Sequence
 from contextlib import contextmanager
 from functools import partial
 from pathlib import Path
-from typing import Annotated, NoReturn
+from typing import Annotated, NoReturn, cast
 
 import ollama
 import sqlite_vec
@@ -55,6 +55,7 @@ from .userconfig import (
 from .versions import check_versions
 
 BATCH_SIZE = 32
+"""Fragmentos que se envían a Ollama por petición de embeddings."""
 
 style_typer_help()
 app = typer.Typer(
@@ -64,6 +65,7 @@ app = typer.Typer(
     add_completion=False,
     pretty_exceptions_show_locals=False,
 )
+"""Aplicación Typer; la ayuda de cada comando es su docstring (una línea)."""
 
 
 def _version_details() -> list[tuple[str, str]]:
@@ -197,6 +199,9 @@ def _index_packages(store: Store, packages: Sequence[str]) -> list[SourceInfo]:
                     f"{package}: módulo no encontrado ({exc.name}).",
                     f"¿Está instalado en el entorno? Prueba `uv add --dev {package}`.",
                 )
+                continue
+            except (ImportError, ValueError, TypeError) as exc:  # rota o inválido
+                print_warning(f"{package}: no se pudo importar ({exc}).")
                 continue
             if info:
                 results.append(info)
@@ -388,6 +393,7 @@ def sources(
 
 def _remove_sources(store: Store, names: list[str], *, yes: bool) -> None:
     """Elimina `names` del índice; no toca nada si alguna no existe."""
+    names = list(dict.fromkeys(names))
     known = {source.package: source for source in store.sources()}
     unknown = [name for name in names if name not in known]
     if unknown:
@@ -401,7 +407,7 @@ def _remove_sources(store: Store, names: list[str], *, yes: bool) -> None:
         f"{sum(known[name].chunks for name in names)} fragmentos."
     ):
         raise typer.Exit(code=1)
-    for name in dict.fromkeys(names):
+    for name in names:
         removed = store.remove(name)
         shutil.rmtree(_docs_cache() / name, ignore_errors=True)  # extracción de un .zip
         print_hint(f"Eliminada {name}: {removed} fragmentos.")
@@ -410,8 +416,7 @@ def _remove_sources(store: Store, names: list[str], *, yes: bool) -> None:
 @app.command()
 def config(ctx: typer.Context) -> None:
     """Muestra las preferencias efectivas; ofrece crear `config.toml` si no existe."""
-    current = ctx.obj
-    assert isinstance(current, UserConfig)
+    current = cast(UserConfig, ctx.obj)
     path = config_path()
     show_user_config(
         effective(current, SETTINGS), path, exists=current.source is not None

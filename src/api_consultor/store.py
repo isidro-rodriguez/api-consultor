@@ -11,12 +11,20 @@ from typing import Self
 
 import sqlite_vec
 
-# 1: sin metadatos (tablas chunks/vec_chunks/FTS); 2: meta + sources; 3: path y line
 FORMAT_VERSION = 3
+"""Formato del índice: 1 sin metadatos, 2 con `meta`/`sources`, 3 con `path`/`line`."""
 
 
 class IndexIntegrityError(Exception):
-    """El índice no es compatible con la configuración actual."""
+    """El índice no es compatible con la configuración actual.
+
+    Args:
+        message: Qué ocurre.
+        hint: Cómo solucionarlo, si se sabe.
+
+    Attributes:
+        hint: Sugerencia para el usuario, o `None`.
+    """
 
     def __init__(self, message: str, hint: str | None = None) -> None:
         super().__init__(message)
@@ -25,20 +33,41 @@ class IndexIntegrityError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class Chunk:
+    """Fragmento indexado: un símbolo de una API o una sección de documentación.
+
+    Attributes:
+        qualname: Nombre único dentro de la fuente (`pkg.mod.func`, `ruta.md#Título`).
+        package: Fuente a la que pertenece (paquete o carpeta/zip de documentación).
+        version: Versión de la fuente cuando se indexó.
+        content: Texto que se vectoriza y se envía al modelo.
+        path: Fichero de origen enlazable; vacío si no existe (builtins).
+        line: Línea del símbolo o sección en `path`; 0 si se desconoce.
+    """
+
     qualname: str
     package: str
     version: str
     content: str
-    path: str = ""  # fichero de origen editable ("" si no existe: zip, builtin)
-    line: int = 0  # línea del símbolo o sección en `path` (0 = desconocida)
+    path: str = ""
+    line: int = 0
 
 
 @dataclass(frozen=True, slots=True)
 class SourceInfo:
+    """Resumen de una fuente indexada.
+
+    Attributes:
+        package: Nombre de la fuente.
+        version: Versión registrada al indexar.
+        chunks: Número de fragmentos.
+        kind: `"package"` (API de un paquete) o `"docs"` (documentación).
+        indexed_at: Fecha ISO de indexado (no cuenta en la comparación).
+    """
+
     package: str
     version: str
     chunks: int
-    kind: str = "package"  # "package" (API de un paquete) o "docs" (documentación)
+    kind: str = "package"
     indexed_at: str = field(default="", compare=False)
 
 
@@ -46,7 +75,23 @@ _COLUMNS = "qualname, package, version, content, path, line"
 
 
 class Store:
-    """Índice local. Si se indica `model`, se valida y se registra."""
+    """Índice local: SQLite con vectores (sqlite-vec), palabras (FTS5) y metadatos.
+
+    Se puede usar como gestor de contexto. Al abrirlo migra los índices de formatos
+    anteriores y valida que la dimensión (y el modelo, si se indica) encajen.
+
+    Args:
+        path: Fichero de la base de datos (se crea con su carpeta si no existe).
+        dim: Dimensión de los vectores de embeddings.
+        model: Modelo de embeddings; si se indica, se valida y se registra.
+
+    Attributes:
+        dim: Dimensión de los vectores del índice.
+
+    Raises:
+        IndexIntegrityError: Si la dimensión, el modelo o el formato no son
+            compatibles con el índice existente.
+    """
 
     def __init__(self, path: Path, dim: int, model: str | None = None) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -163,11 +208,18 @@ class Store:
             )
 
     def meta(self) -> dict[str, str]:
-        """Metadatos del índice: formato, modelo y dimensión de embeddings, creación."""
+        """Devuelve los metadatos: formato, modelo y dimensión, y fecha de creación."""
         return dict(self._db.execute("SELECT key, value FROM meta").fetchall())
 
     def check_vector(self, vector: Sequence[float]) -> None:
-        """Falla si el vector no tiene la dimensión del índice."""
+        """Comprueba que un vector tiene la dimensión del índice.
+
+        Args:
+            vector: Embedding a validar.
+
+        Raises:
+            IndexIntegrityError: Si la dimensión no coincide.
+        """
         if len(vector) != self.dim:
             raise IndexIntegrityError(
                 f"El modelo de embeddings produce vectores de {len(vector)} "
@@ -187,6 +239,7 @@ class Store:
         self.close()
 
     def close(self) -> None:
+        """Cierra la conexión con la base de datos."""
         self._db.close()
 
     def replace(
@@ -196,7 +249,21 @@ class Store:
         embeddings: Sequence[Sequence[float]],
         kind: str = "package",
     ) -> None:
-        """Sustituye todo lo indexado de `package` (reindexado idempotente)."""
+        """Sustituye todo lo indexado de una fuente (reindexado idempotente).
+
+        Todo ocurre en una transacción: si falla, se conserva lo anterior. Sin
+        fragmentos, la fuente desaparece del índice.
+
+        Args:
+            package: Nombre de la fuente.
+            chunks: Fragmentos nuevos.
+            embeddings: Un embedding por fragmento, en el mismo orden.
+            kind: `"package"` o `"docs"`.
+
+        Raises:
+            IndexIntegrityError: Si algún embedding no tiene la dimensión del índice.
+            ValueError: Si hay distinto número de fragmentos y de embeddings.
+        """
         for embedding in embeddings:
             self.check_vector(embedding)  # antes de tocar nada
         with self._db:  # una sola transacción
@@ -239,6 +306,7 @@ class Store:
                 self._db.execute("DELETE FROM sources WHERE name = ?", (package,))
 
     def sources(self) -> list[SourceInfo]:
+        """Lista las fuentes indexadas, por nombre, con su número de fragmentos."""
         rows = self._db.execute(
             "SELECT s.name, s.version, COUNT(c.id), s.kind, s.indexed_at "
             "FROM sources AS s LEFT JOIN chunks AS c ON c.package = s.name "
@@ -247,7 +315,14 @@ class Store:
         return [SourceInfo(*row) for row in rows]
 
     def remove(self, package: str) -> int:
-        """Elimina una fuente con todos sus fragmentos; devuelve cuántos borró."""
+        """Elimina una fuente con todos sus fragmentos.
+
+        Args:
+            package: Nombre de la fuente (si no existe, no hace nada).
+
+        Returns:
+            Cuántos fragmentos se borraron.
+        """
         row = self._db.execute(
             "SELECT COUNT(*) FROM chunks WHERE package = ?", (package,)
         ).fetchone()
@@ -255,10 +330,19 @@ class Store:
         return int(row[0])
 
     def qualnames(self) -> list[str]:
+        """Devuelve el nombre cualificado de todos los fragmentos del índice."""
         return [row[0] for row in self._db.execute("SELECT qualname FROM chunks")]
 
     def by_name(self, names: Iterable[str], limit_per_name: int = 2) -> list[Chunk]:
-        """Coincidencia exacta con el nombre cualificado o con su sufijo."""
+        """Busca por nombre cualificado exacto o por sufijo tras un punto.
+
+        Args:
+            names: Nombres a buscar, p. ej. `pathlib.Path.rglob` o `Path.rglob`.
+            limit_per_name: Máximo de resultados por nombre.
+
+        Returns:
+            Los fragmentos encontrados, agrupados por nombre.
+        """
         found: list[Chunk] = []
         for name in names:
             rows = self._db.execute(
@@ -270,10 +354,17 @@ class Store:
         return found
 
     def by_short_name(self, names: Iterable[str], max_matches: int = 5) -> list[Chunk]:
-        """Símbolos cuyo último componente coincide (sin distinguir mayúsculas).
+        """Busca símbolos por su último componente, sin distinguir mayúsculas.
 
         Un nombre que coincide con más de `max_matches` símbolos es demasiado genérico
         para identificar uno y se ignora.
+
+        Args:
+            names: Nombres cortos, p. ej. `rglob`.
+            max_matches: Máximo de coincidencias para que un nombre cuente.
+
+        Returns:
+            Los fragmentos de los nombres suficientemente específicos.
         """
         found: list[Chunk] = []
         for name in dict.fromkeys(n.lower() for n in names):
@@ -286,9 +377,14 @@ class Store:
         return found
 
     def lexical(self, query: str, limit: int) -> list[Chunk]:
-        """Búsqueda por palabras (FTS5, ranking BM25) con más peso en el nombre.
+        """Busca por palabras (FTS5, ranking BM25) con más peso en el nombre.
 
-        `query` usa la sintaxis de FTS5; si no es válida no se devuelve nada.
+        Args:
+            query: Consulta en la sintaxis de FTS5.
+            limit: Máximo de resultados.
+
+        Returns:
+            Fragmentos de mejor a peor; vacío si la consulta no es válida.
         """
         try:
             rows = self._db.execute(
@@ -307,12 +403,35 @@ class Store:
         return [Chunk(*row) for row in rows]
 
     def search(self, embedding: Sequence[float], k: int) -> list[Chunk]:
+        """Busca los vecinos más cercanos a un embedding.
+
+        Args:
+            embedding: Vector de la consulta.
+            k: Cuántos vecinos devolver.
+
+        Returns:
+            Los `k` fragmentos más cercanos, del más parecido al menos.
+
+        Raises:
+            IndexIntegrityError: Si el vector no tiene la dimensión del índice.
+        """
         return [chunk for chunk, _distance in self.search_scored(embedding, k)]
 
     def search_scored(
         self, embedding: Sequence[float], k: int
     ) -> list[tuple[Chunk, float]]:
-        """Vecinos más cercanos con su distancia (menor = más parecido)."""
+        """Busca los vecinos más cercanos junto con su distancia.
+
+        Args:
+            embedding: Vector de la consulta.
+            k: Cuántos vecinos devolver.
+
+        Returns:
+            Pares (fragmento, distancia), de menor a mayor distancia.
+
+        Raises:
+            IndexIntegrityError: Si el vector no tiene la dimensión del índice.
+        """
         self.check_vector(embedding)
         rows = self._db.execute(
             f"""

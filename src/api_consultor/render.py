@@ -35,17 +35,35 @@ from .evaluation import EvalReport
 from .store import Chunk, SourceInfo
 from .versions import VersionStatus
 
-# Paleta Monokai
 FG = "#F8F8F2"
+"""Monokai: texto principal."""
+
 BG = "#272822"
+"""Monokai: fondo (bloques de código)."""
+
 LINE = "#3E3D32"
+"""Monokai: líneas y fondos tenues."""
+
 COMMENT = "#75715E"
+"""Monokai: texto secundario."""
+
 RED = "#F92672"
+"""Monokai: errores y énfasis."""
+
 ORANGE = "#FD971F"
+"""Monokai: avisos."""
+
 YELLOW = "#E6DB74"
+"""Monokai: código en línea."""
+
 GREEN = "#A6E22E"
+"""Monokai: éxito y títulos."""
+
 BLUE = "#66D9EF"
+"""Monokai: información."""
+
 PURPLE = "#AE81FF"
+"""Monokai: acento."""
 
 THEME = Theme(
     {
@@ -87,13 +105,24 @@ THEME = Theme(
     }
 )
 
+"""Estilos semánticos (info, success, warning, error, muted, accent…) y de Markdown."""
+
 APP_NAME = "ApiConsultor"
+"""Nombre de la aplicación que se dibuja en el banner."""
+
 TAGLINE = "Consultor de APIs Python offline con Ollama y RAG"
+"""Lema bajo el banner."""
+
 BANNER_FONT = "slant"
+"""Fuente figlet del banner."""
+
 _RAINBOW = (RED, ORANGE, YELLOW, GREEN, BLUE, PURPLE)
 
 console = Console(theme=THEME, highlight=False)
+"""Consola de la salida normal."""
+
 err_console = Console(theme=THEME, highlight=False, stderr=True)
+"""Consola de errores y avisos (salida de error)."""
 
 
 def style_typer_help() -> None:
@@ -139,14 +168,31 @@ def _message(
 
 
 def print_error(message: str, hint: str | None = None) -> None:
+    """Imprime un error en la salida de error.
+
+    Args:
+        message: Qué ha fallado.
+        hint: Cómo solucionarlo, en una línea aparte y atenuada.
+    """
     _message(err_console, "✖", "error", message, hint)
 
 
 def print_warning(message: str, hint: str | None = None) -> None:
+    """Imprime un aviso en la salida de error.
+
+    Args:
+        message: Qué ocurre.
+        hint: Qué hacer al respecto, en una línea aparte y atenuada.
+    """
     _message(err_console, "!", "warning", message, hint)
 
 
 def print_hint(message: str) -> None:
+    """Imprime una nota informativa atenuada.
+
+    Args:
+        message: Texto a mostrar.
+    """
     console.print(_fit(Text(message, style="muted")))
 
 
@@ -154,7 +200,12 @@ def print_hint(message: str) -> None:
 
 
 def prompt() -> str | None:
-    """Lee una línea; devuelve None si el usuario cierra (Ctrl+D o Ctrl+C)."""
+    """Lee una línea del usuario.
+
+    Returns:
+        El texto sin espacios sobrantes, o `None` si el usuario cierra la entrada
+        (Ctrl+D o Ctrl+C).
+    """
     try:
         return console.input(Text("> ", style="prompt")).strip()
     except (EOFError, KeyboardInterrupt):
@@ -163,7 +214,14 @@ def prompt() -> str | None:
 
 
 def status(message: str) -> Status:
-    """Spinner para esperas cortas (usar como gestor de contexto)."""
+    """Crea un spinner para esperas cortas.
+
+    Args:
+        message: Texto que acompaña al spinner.
+
+    Returns:
+        El indicador, para usarlo como gestor de contexto.
+    """
     return console.status(message, spinner="dots")
 
 
@@ -175,7 +233,12 @@ def stream_markdown(tokens: Iterable[str]) -> str:
 
     Durante el streaming se redibuja en vivo (con un spinner hasta el primer token);
     al terminar se imprime una sola vez completa, aunque supere el alto de la terminal.
-    Devuelve el texto completo de la respuesta.
+
+    Args:
+        tokens: Trozos de la respuesta según llegan.
+
+    Returns:
+        El texto completo de la respuesta.
     """
     buffer = ""
     with Live(
@@ -204,6 +267,12 @@ def show_sources(
     Marca con ✔ los citados y con ⚠ las fuentes con versión obsoleta. Si el modelo
     citó identificadores inexistentes o no citó nada, lo avisa bajo el panel. Con
     `link`, el nombre es un hiperenlace de terminal a la ubicación del fragmento.
+
+    Args:
+        chunks: Fragmentos enviados al modelo, en el orden de sus `DOC-NN`.
+        stale: Fuentes cuya versión instalada difiere de la indexada.
+        citations: Citas de la respuesta, si se han comprobado.
+        link: Función que da la URL de un fragmento (o `None` si no tiene).
     """
     if not chunks:
         return
@@ -261,7 +330,13 @@ def _show_citation_issues(citations: Citations) -> None:
 
 
 def show_debug(retrieval: Retrieval, context_chars: int, limit: int = 15) -> None:
-    """Diagnóstico de la recuperación: señales, candidatos y tamaño del contexto."""
+    """Muestra el diagnóstico de la recuperación (`ask --debug`).
+
+    Args:
+        retrieval: Resultado de la recuperación, con candidatos y señales.
+        context_chars: Tamaño en caracteres del contexto enviado al modelo.
+        limit: Cuántos candidatos listar.
+    """
     summary = Table.grid(padding=(0, 2))
     summary.add_column(style="muted", justify="right")
     summary.add_column(style=FG, overflow="fold")
@@ -297,7 +372,7 @@ def show_debug(retrieval: Retrieval, context_chars: int, limit: int = 15) -> Non
         distance = candidate.distance
         table.add_row(
             mark,
-            candidate.chunk.qualname,
+            Text(candidate.chunk.qualname),
             *(str(candidate.ranks.get(signal, "·")) for signal in "NSLV"),
             "—" if distance is None else f"{distance:.3f}",
             f"{candidate.score * 100:.2f}",
@@ -311,6 +386,11 @@ def show_debug(retrieval: Retrieval, context_chars: int, limit: int = 15) -> Non
 
 
 def progress_bar() -> Progress:
+    """Crea la barra de progreso del indexado y la evaluación.
+
+    Returns:
+        Una barra transitoria, para usarla como gestor de contexto.
+    """
     return Progress(
         SpinnerColumn(style="accent", finished_text=Text("✔", style="success")),
         TextColumn(
@@ -327,6 +407,12 @@ def progress_bar() -> Progress:
 
 
 def show_sources_table(sources: Sequence[SourceInfo], title: str) -> None:
+    """Muestra una tabla de fuentes con su versión y número de fragmentos.
+
+    Args:
+        sources: Fuentes a listar (si está vacío, no imprime nada).
+        title: Título de la tabla.
+    """
     if not sources:
         return
     table = Table(
@@ -341,7 +427,7 @@ def show_sources_table(sources: Sequence[SourceInfo], title: str) -> None:
     table.add_column("Versión", style="muted")
     table.add_column("Fragmentos", justify="right", style="success")
     for source in sources:
-        table.add_row(source.package, source.version, f"{source.chunks:,}")
+        table.add_row(Text(source.package), Text(source.version), f"{source.chunks:,}")
     console.print(_fit(table))
 
 
@@ -355,7 +441,12 @@ def _score(value: float, *, percent: bool) -> Text:
 
 
 def show_evaluation(report: EvalReport, *, verbose: bool = False) -> None:
-    """Tabla de métricas (global y por categoría) y lista de casos fallidos."""
+    """Muestra las métricas (globales y por categoría) y los casos fallidos.
+
+    Args:
+        report: Informe de la evaluación.
+        verbose: Si es `True`, lista todos los casos y no solo los fallos.
+    """
     table = Table(
         title="Evaluación de la recuperación",
         title_style="title",
@@ -374,7 +465,7 @@ def show_evaluation(report: EvalReport, *, verbose: bool = False) -> None:
         rows += [(name, report.metrics(name)) for name in report.categories]
     for name, metrics in rows:
         table.add_row(
-            name,
+            Text(name),
             str(metrics.cases),
             *(_score(metrics.recall[k], percent=True) for k in report.ks),
             _score(metrics.mrr, percent=False),
@@ -410,8 +501,8 @@ def show_evaluation(report: EvalReport, *, verbose: bool = False) -> None:
         first = result.ranked[0] if result.ranked else "—"
         detail.add_row(
             cell,
-            result.case.question,
-            ", ".join(result.case.expected),
+            Text(result.case.question),
+            Text(", ".join(result.case.expected)),
             Text(first, style="muted"),
         )
     console.print()
@@ -440,7 +531,12 @@ def _banner(max_width: int) -> RenderableType:
 
 
 def show_version(version: str, details: Sequence[tuple[str, str]]) -> None:
-    """Panel con el banner, la versión y datos del entorno."""
+    """Muestra el panel con el banner, la versión y datos del entorno.
+
+    Args:
+        version: Versión de la aplicación.
+        details: Pares (etiqueta, valor) del entorno.
+    """
     available = min(console.width, SETTINGS.console_width) - 6  # borde + relleno
     grid = Table.grid(padding=(0, 2))
     grid.add_column(style="muted", justify="right")
@@ -476,7 +572,13 @@ _STATE_LABELS = {
 def show_status_table(
     statuses: Sequence[VersionStatus], title: str, caption: str | None = None
 ) -> None:
-    """Fuentes indexadas con su versión instalada y si están al día."""
+    """Muestra las fuentes indexadas con su versión instalada y si están al día.
+
+    Args:
+        statuses: Estado de cada fuente.
+        title: Título de la tabla.
+        caption: Pie de tabla opcional.
+    """
     table = Table(
         title=title,
         title_style="title",
@@ -494,13 +596,13 @@ def show_status_table(
     table.add_column("Estado")
     table.add_column("Fragmentos", justify="right", style="success")
     table.add_column("Fecha", style="muted")
-    for status in statuses:
-        source = status.source
-        label, style = _STATE_LABELS[status.state]
+    for entry in statuses:
+        source = entry.source
+        label, style = _STATE_LABELS[entry.state]
         table.add_row(
-            source.package,
-            source.version,
-            status.installed or "—",
+            Text(source.package),
+            Text(source.version),
+            Text(entry.installed or "—"),
             Text(label, style=style),
             f"{source.chunks:,}",
             source.indexed_at[:10] or "—",
@@ -511,13 +613,21 @@ def show_status_table(
 def show_user_config(
     rows: Sequence[tuple[str, str, bool]], path: Path, *, exists: bool
 ) -> None:
-    """Preferencias efectivas; marca las que vienen de `config.toml`."""
+    """Muestra las preferencias efectivas y cuáles vienen de `config.toml`.
+
+    Args:
+        rows: Tuplas (opción, valor, definido por el usuario).
+        path: Ruta de `config.toml`.
+        exists: Si el fichero existe.
+    """
     grid = Table.grid(padding=(0, 2))
     grid.add_column(style="muted", no_wrap=True)
     grid.add_column(style=FG, overflow="fold")
     grid.add_column(style="muted", no_wrap=True)
     for name, value, custom in rows:
-        grid.add_row(name, value, "config.toml" if custom else "por defecto")
+        grid.add_row(
+            Text(name), Text(value), "config.toml" if custom else "por defecto"
+        )
     note = "" if exists else " (no existe)"
     console.print(
         _fit(

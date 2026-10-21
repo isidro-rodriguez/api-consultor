@@ -35,7 +35,18 @@ select = [
     "PT",   # buenas prácticas de pytest
     "PTH",  # pathlib en lugar de os.path
     "RUF",
+    "D",    # docstrings (estilo Google) en lo público
 ]
+ignore = [
+    "D105",  # métodos mágicos
+    "D107",  # __init__: se documenta en la clase
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D"]
 
 [tool.ty.environment]
 python-version = "3.12"

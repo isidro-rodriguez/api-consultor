@@ -3,6 +3,7 @@
 import re
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
+from html import escape
 
 from .citations import INSTRUCTION, doc_id
 from .config import SETTINGS
@@ -22,10 +23,19 @@ _STOPWORDS = frozenset(_STOPWORDS_TEXT.split())
 
 # Fusión de rankings (Reciprocal Rank Fusion): puntuación = peso / (RRF_K + posición).
 RRF_K = 60
-WEIGHT_QUALIFIED = 3.0  # nombre cualificado en la pregunta (pathlib.Path.rglob)
-WEIGHT_SHORT = 1.5  # nombre corto de un símbolo (rglob)
-WEIGHT_LEXICAL = 1.0  # palabras en el contenido (BM25)
-WEIGHT_SEMANTIC = 1.0  # similitud de embeddings
+"""Constante de suavizado de RRF: cuánto pesa la posición en cada ranking."""
+
+WEIGHT_QUALIFIED = 3.0
+"""Peso de la señal «nombre cualificado en la pregunta» (`pathlib.Path.rglob`)."""
+
+WEIGHT_SHORT = 1.5
+"""Peso de la señal «nombre corto de un símbolo» (`rglob`)."""
+
+WEIGHT_LEXICAL = 1.0
+"""Peso de la señal «palabras en el contenido» (BM25)."""
+
+WEIGHT_SEMANTIC = 1.0
+"""Peso de la señal «similitud de embeddings»."""
 
 
 def _terms(question: str) -> list[str]:
@@ -94,14 +104,23 @@ def _diversify(ordered: Sequence[Chunk], limit: int, per_symbol: int) -> list[Ch
         if len(chosen) == limit:
             break
     if len(chosen) < limit:
-        extra = (i for i in range(len(ordered)) if i not in set(chosen))
-        chosen.extend(list(extra)[: limit - len(chosen)])
+        taken = set(chosen)
+        extra = [i for i in range(len(ordered)) if i not in taken]
+        chosen.extend(extra[: limit - len(chosen)])
     return [ordered[i] for i in sorted(chosen)]
 
 
 @dataclass(frozen=True, slots=True)
 class Candidate:
-    """Un candidato de la recuperación con sus señales (para `--debug`)."""
+    """Un candidato de la recuperación con sus señales (para `--debug`).
+
+    Attributes:
+        chunk: El fragmento candidato.
+        score: Puntuación RRF fusionada.
+        ranks: Posición del fragmento en cada señal (`N`, `S`, `L`, `V`).
+        distance: Distancia vectorial, si apareció en la búsqueda semántica.
+        selected: Si se envía al modelo.
+    """
 
     chunk: Chunk
     score: float
@@ -112,7 +131,16 @@ class Candidate:
 
 @dataclass(frozen=True, slots=True)
 class Retrieval:
-    """Resultado de recuperar: elegidos, candidatos y motivo de abstención."""
+    """Resultado de recuperar: elegidos, candidatos y motivo de abstención.
+
+    Attributes:
+        chunks: Fragmentos que se envían al modelo (vacío si hay abstención).
+        candidates: Todos los candidatos fusionados, de mejor a peor.
+        names: Nombres de símbolos detectados en la pregunta.
+        terms: Palabras significativas de la pregunta.
+        best_distance: Menor distancia vectorial encontrada, si hubo.
+        abstain_reason: Por qué no se responde, o `None` si se responde.
+    """
 
     chunks: list[Chunk]
     candidates: list[Candidate] = field(default_factory=list)
@@ -123,21 +151,47 @@ class Retrieval:
 
 
 def format_context(chunks: list[Chunk]) -> str:
+    """Da formato XML al contexto que se envía al modelo.
+
+    Cada fragmento va en un bloque `<docs id="DOC-NN" ...>` con sus atributos
+    escapados, para que el modelo pueda citarlo por su identificador.
+
+    Args:
+        chunks: Fragmentos elegidos, en el orden en que se numeran.
+
+    Returns:
+        El contexto, o `<docs/>` si no hay fragmentos.
+    """
     if not chunks:
         return "<docs/>"
     return "\n".join(
-        f'<docs id="{doc_id(i)}" source="{c.qualname}" package="{c.package}" '
-        f'version="{c.version}">\n{c.content}\n</docs>'
+        f'<docs id="{doc_id(i)}" source="{escape(c.qualname)}" '
+        f'package="{escape(c.package)}" version="{escape(c.version)}">\n'
+        f"{c.content}\n</docs>"
         for i, c in enumerate(chunks, start=1)
     )
 
 
 class Consultor:
+    """Flujo RAG sobre un índice: recupera fragmentos y pregunta al modelo.
+
+    Args:
+        store: Índice abierto en el que buscar.
+    """
+
     def __init__(self, store: Store) -> None:
         self._store = store
 
     def retrieve(self, question: str, k: int | None = None) -> list[Chunk]:
-        """Fragmentos más relevantes (por defecto `SETTINGS.retrieval_k`)."""
+        """Devuelve los fragmentos más relevantes para una pregunta.
+
+        Args:
+            question: Pregunta del usuario.
+            k: Cuántos fragmentos devolver; por defecto `SETTINGS.retrieval_k`.
+
+        Returns:
+            Los fragmentos elegidos (vacío si la recuperación se abstiene).
+        """
         return self.search(question, k).chunks
 
     def search(self, question: str, k: int | None = None) -> Retrieval:
@@ -147,6 +201,17 @@ class Consultor:
         contenido con BM25 y similitud semántica) con RRF, limita los fragmentos por
         símbolo y, si hay umbral (`max_distance`) y no hay coincidencia de nombre ni
         vecinos suficientemente cercanos, se abstiene.
+
+        Args:
+            question: Pregunta del usuario.
+            k: Cuántos fragmentos elegir; por defecto `SETTINGS.retrieval_k`.
+
+        Returns:
+            Los elegidos junto con todos los candidatos y sus señales.
+
+        Raises:
+            ConnectionError: Si no se puede contactar con Ollama para el embedding.
+            IndexIntegrityError: Si el modelo de embeddings no encaja con el índice.
         """
         limit = SETTINGS.retrieval_k if k is None else k
         pool = max(SETTINGS.retrieval_candidates, limit)
@@ -203,6 +268,14 @@ class Consultor:
         return None
 
     def stream(self, question: str, chunks: list[Chunk]) -> Iterator[str]:
-        """Genera la respuesta en streaming a partir de los fragmentos recuperados."""
+        """Genera la respuesta en streaming a partir de los fragmentos recuperados.
+
+        Args:
+            question: Pregunta del usuario.
+            chunks: Fragmentos que forman el contexto (los numera como `DOC-NN`).
+
+        Yields:
+            Los trozos de la respuesta según los genera el modelo.
+        """
         content = f"{format_context(chunks)}\n\n{INSTRUCTION}\n\nPregunta: {question}"
         yield from stream_chat([{"role": "user", "content": content}])

@@ -12,6 +12,18 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 - La base de datos se guarda por defecto en la carpeta de datos del usuario, no en
   `data/` del proyecto. Para conservar la anterior: moverla allí o fijar
   `[paths] db = "data/consultor.db"` en `config.toml`.
+- Docstrings en estilo Google en toda la API pública (constantes incluidas); ruff exige
+  docstrings en lo público (`D`, convención Google).
+
+### Corregido
+
+- Títulos o nombres con corchetes (`[tool.ruff]`) rompían las tablas de Rich al
+  interpretarse como estilos; ahora se imprimen literalmente.
+- El contexto enviado al modelo escapa los atributos XML (comillas, `<`, `&`).
+- `api sources --remove` contaba dos veces un nombre repetido en la confirmación.
+- `api index` ya no se cae con paquetes que fallan al importarse o con nombres inválidos:
+  avisa y sigue con el siguiente.
+- Las rutas de `config.toml` admiten `~`.
 
 ### Añadido
 

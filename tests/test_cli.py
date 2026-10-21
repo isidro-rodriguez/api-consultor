@@ -11,7 +11,7 @@ from api_consultor.cli import app
 from api_consultor.config import SETTINGS
 from api_consultor.store import Chunk, Store
 
-from .conftest import EMBED_DIM, StubOllama, fake_embed
+from .conftest import EMBED_DIM, PackageFactory, StubOllama, fake_embed
 
 runner = CliRunner()
 
@@ -415,3 +415,29 @@ def test_removing_a_source_deletes_its_extraction(
     assert cache.is_dir()
     assert runner.invoke(app, ["sources", "-r", "manual-1.0", "-y"]).exit_code == 0
     assert not cache.exists()
+
+
+def test_sources_remove_counts_repeated_names_once(indexed: StubOllama) -> None:
+    result = runner.invoke(
+        app, ["sources", "-r", "mis-notas", "-r", "mis-notas"], input="n\n"
+    )
+    assert result.exit_code == 1
+    assert "Se borrarán 1 fragmentos" in result.output
+
+
+def test_index_reports_packages_that_fail_to_import(
+    stub_ollama: StubOllama, make_package: PackageFactory
+) -> None:
+    broken = make_package(
+        "synth_broken", {"__init__.py": "raise ImportError('roto')\n"}
+    )
+    result = runner.invoke(app, ["index", broken, "json"])
+    assert result.exit_code == 0, result.output
+    assert "no se pudo importar (roto)" in result.output
+    assert "json" in result.output  # el siguiente paquete se indexa igualmente
+
+
+def test_index_rejects_invalid_package_names(stub_ollama: StubOllama) -> None:
+    result = runner.invoke(app, ["index", ".relativo", "json"])
+    assert result.exit_code == 0, result.output
+    assert "no se pudo importar" in result.output

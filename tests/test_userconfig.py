@@ -197,3 +197,8 @@ def test_create_writes_a_loadable_template(isolated_user_config: Path) -> None:
     assert create() == isolated_user_config
     assert isolated_user_config.read_text(encoding="utf-8") == template()
     assert load().overrides == {}
+
+
+def test_paths_expand_the_home_directory(isolated_user_config: Path) -> None:
+    write(isolated_user_config, '[paths]\ndb = "~/indice.db"\n')
+    assert load().overrides["db_path"] == Path("~/indice.db").expanduser()

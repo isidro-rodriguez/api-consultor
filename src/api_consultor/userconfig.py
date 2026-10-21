@@ -14,13 +14,26 @@ from urllib.parse import quote
 from .config import APP_DIR, Settings
 from .store import Chunk
 
-ENV_VAR = "API_CONSULTOR_CONFIG"  # ruta alternativa al fichero (también para tests)
+ENV_VAR = "API_CONSULTOR_CONFIG"
+"""Variable de entorno con una ruta alternativa a `config.toml` (también para tests)."""
+
 DEFAULT_LINK = "{uri}"
+"""Plantilla de enlace por defecto: un `file://` al fichero."""
+
 LINK_FIELDS = "{file} {path} {uri} {line}"
+"""Campos que admite la plantilla de enlace."""
 
 
 class UserConfigError(Exception):
-    """El fichero de preferencias no se puede usar."""
+    """El fichero de preferencias no se puede usar.
+
+    Args:
+        message: Qué ocurre.
+        hint: Cómo solucionarlo, si se sabe.
+
+    Attributes:
+        hint: Sugerencia para el usuario, o `None`.
+    """
 
     def __init__(self, message: str, hint: str | None = None) -> None:
         super().__init__(message)
@@ -29,7 +42,16 @@ class UserConfigError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class Option:
-    """Una opción de `config.toml` y el campo de `Settings` que gobierna."""
+    """Una opción de `config.toml` y el campo de `Settings` que gobierna.
+
+    Attributes:
+        table: Sección del TOML (`retrieval`).
+        key: Clave dentro de la sección (`k`).
+        setting: Campo de `Settings` que sobrescribe (`retrieval_k`).
+        kind: Tipo esperado: `str`, `int`, `float` o `Path`.
+        help: Descripción que aparece en la plantilla.
+        positive: Si los números deben ser mayores que 0.
+    """
 
     table: str
     key: str
@@ -40,6 +62,7 @@ class Option:
 
     @property
     def name(self) -> str:
+        """Nombre completo de la opción, p. ej. `retrieval.k`."""
         return f"{self.table}.{self.key}"
 
 
@@ -65,11 +88,20 @@ OPTIONS = (
     ),
     Option("display", "width", "console_width", int, "Ancho máximo de la salida."),
 )
+"""Opciones que admite `config.toml` (además de `[links] url`)."""
+
 _TABLES = {option.table for option in OPTIONS} | {"links"}
 
 
 def config_path() -> Path:
-    """Ruta de `config.toml` según el sistema (Windows, macOS o XDG en Linux)."""
+    """Devuelve la ruta de `config.toml` según el sistema.
+
+    Respeta `API_CONSULTOR_CONFIG`; si no, usa `%APPDATA%` (Windows),
+    `~/Library/Application Support` (macOS) o `$XDG_CONFIG_HOME` / `~/.config`.
+
+    Returns:
+        Ruta del fichero (puede no existir).
+    """
     override = os.environ.get(ENV_VAR)
     if override is not None:
         return Path(override)
@@ -85,14 +117,24 @@ def config_path() -> Path:
 
 @dataclass(frozen=True, slots=True)
 class UserConfig:
-    """Valores leídos de `config.toml` (solo los que el usuario definió)."""
+    """Valores leídos de `config.toml` (solo los que el usuario definió).
 
-    overrides: dict[str, object] = field(default_factory=dict)  # campo de Settings
+    Attributes:
+        overrides: Valores del usuario por campo de `Settings`.
+        link: Plantilla del hiperenlace de las fuentes.
+        source: Fichero leído, o `None` si no existe.
+    """
+
+    overrides: dict[str, object] = field(default_factory=dict)
     link: str = DEFAULT_LINK
-    source: Path | None = None  # fichero leído (None = no existe)
+    source: Path | None = None
 
     def apply(self, settings: Settings) -> None:
-        """Aplica los valores del usuario sobre `settings`."""
+        """Sobrescribe `settings` con los valores del usuario.
+
+        Args:
+            settings: Configuración a modificar en el sitio.
+        """
         for name, value in self.overrides.items():
             setattr(settings, name, value)
 
@@ -102,17 +144,31 @@ def _convert(option: Option, value: object, path: Path) -> object:
     if option.kind in (str, Path):
         if not isinstance(value, str) or not value.strip():
             raise UserConfigError(f"{where} debe ser un texto no vacío.")
-        return Path(value) if option.kind is Path else value
-    number = isinstance(value, int | float) and not isinstance(value, bool)
-    if not number or (option.kind is int and not isinstance(value, int)):
+        return Path(value).expanduser() if option.kind is Path else value
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int | float)
+        or (option.kind is int and not isinstance(value, int))
+    ):
         raise UserConfigError(f"{where} debe ser de tipo {option.kind.__name__}.")
-    if value <= 0:  # type: ignore[operator]
+    if value <= 0:
         raise UserConfigError(f"{where} debe ser mayor que 0.")
     return value
 
 
 def load(path: Path | None = None) -> UserConfig:
-    """Lee las preferencias; sin fichero devuelve los valores por defecto."""
+    """Lee y valida `config.toml`.
+
+    Args:
+        path: Fichero a leer; por defecto, el de `config_path()`.
+
+    Returns:
+        Las preferencias del usuario (vacías si el fichero no existe).
+
+    Raises:
+        UserConfigError: Si el fichero no se puede leer, tiene secciones o claves
+            desconocidas, valores de tipo incorrecto o una plantilla de enlace inválida.
+    """
     path = path or config_path()
     if not path.is_file():
         return UserConfig()
@@ -170,7 +226,15 @@ def _validate_link(config: UserConfig) -> None:
 
 
 def chunk_link(config: UserConfig, chunk: Chunk) -> str | None:
-    """URL (hiperenlace de terminal) a la ubicación del fragmento, si la tiene."""
+    """Construye el hiperenlace de terminal a la ubicación de un fragmento.
+
+    Args:
+        config: Preferencias con la plantilla de enlace.
+        chunk: Fragmento del que se quiere el enlace.
+
+    Returns:
+        La URL, o `None` si el fragmento no tiene un fichero con ruta absoluta.
+    """
     if not chunk.path or not Path(chunk.path).is_absolute():
         return None
     url = config.link.format(**_fields(chunk.path, chunk.line))
@@ -178,7 +242,15 @@ def chunk_link(config: UserConfig, chunk: Chunk) -> str | None:
 
 
 def effective(config: UserConfig, settings: Settings) -> list[tuple[str, str, bool]]:
-    """(opción, valor, definido por el usuario) de cada opción de `config.toml`."""
+    """Lista los valores efectivos de cada opción de `config.toml`.
+
+    Args:
+        config: Preferencias del usuario.
+        settings: Configuración ya con esas preferencias aplicadas.
+
+    Returns:
+        Tuplas (opción, valor, definido por el usuario); `—` si no hay valor.
+    """
     rows = [
         (
             option.name,
@@ -194,7 +266,11 @@ def effective(config: UserConfig, settings: Settings) -> list[tuple[str, str, bo
 
 
 def template() -> str:
-    """Contenido de un `config.toml` nuevo: valores por defecto, comentados."""
+    """Genera el contenido de un `config.toml` nuevo.
+
+    Returns:
+        Una plantilla con cada opción documentada y comentada con su valor por defecto.
+    """
     defaults = Settings()
     lines = [
         "# Preferencias de ApiConsultor. Descomenta y cambia lo que necesites;",
@@ -226,7 +302,14 @@ def _toml(value: object) -> str:
 
 
 def create(path: Path | None = None) -> Path:
-    """Crea `config.toml` con la plantilla (y su carpeta) y devuelve la ruta."""
+    """Escribe la plantilla de `config.toml`, creando la carpeta si hace falta.
+
+    Args:
+        path: Dónde escribirla; por defecto, `config_path()`.
+
+    Returns:
+        La ruta del fichero creado.
+    """
     path = path or config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(template(), encoding="utf-8")

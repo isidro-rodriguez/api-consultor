@@ -243,3 +243,11 @@ def test_stream_asks_the_model_to_cite_ids(
     prompt = stub_ollama.messages[0][0]["content"]
     assert "[DOC-01]" in prompt
     assert prompt.endswith("Pregunta: ¿qué?")
+
+
+def test_format_context_escapes_attribute_values() -> None:
+    chunk = Chunk('a.md#Dice "hola" <b>', "p&q", "1", "cuerpo")
+    context = format_context([chunk])
+    assert 'source="a.md#Dice &quot;hola&quot; &lt;b&gt;"' in context
+    assert 'package="p&amp;q"' in context
+    assert context.count("<docs ") == 1

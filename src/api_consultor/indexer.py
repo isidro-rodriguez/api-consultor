@@ -16,9 +16,14 @@ from .versions import UNKNOWN, installed_version
 
 log = logging.getLogger(__name__)
 
-MAX_CHARS = 2000  # ~500 tokens por chunk: 5 chunks caben de sobra en 8k de contexto
-CONTINUATION = " (continuación 99)"  # marca máxima que se añade a las cabeceras
-MIN_BODY = 500  # espacio mínimo para el docstring aunque la firma sea larguísima
+MAX_CHARS = 2000
+"""Tamaño máximo de un fragmento (~500 tokens: caben 5 en un contexto de 8k)."""
+
+CONTINUATION = " (continuación 99)"
+"""Marca más larga que se añade a la cabecera de un fragmento de continuación."""
+
+MIN_BODY = 500
+"""Espacio mínimo para el docstring aunque la firma sea larguísima."""
 
 
 def _version(package: str) -> str:
@@ -30,6 +35,13 @@ def doc_parts(doc: str, limit: int) -> list[str]:
 
     Respeta las secciones (`Parameters`, `Returns`, `Examples`…): agrupa secciones
     completas mientras quepan y solo parte por párrafos las que no caben solas.
+
+    Args:
+        doc: Docstring ya limpio (`inspect.getdoc`).
+        limit: Tamaño máximo de cada parte.
+
+    Returns:
+        Las partes, en orden; su unión contiene todo el texto original.
     """
     parts: list[str] = []
     buffer = ""
@@ -129,7 +141,18 @@ def extract_chunks(package: str) -> list[Chunk]:
     Un docstring largo se reparte en varios chunks por secciones y párrafos; ninguno
     pierde texto (`MAX_CHARS` es un límite de tamaño, no un truncado).
 
-    Lanza ModuleNotFoundError si el paquete no está instalado en el entorno.
+    Cada chunk recuerda el fichero y la línea de su símbolo (vacíos si no hay fuente,
+    p. ej. en extensiones en C).
+
+    Args:
+        package: Nombre importable del paquete, p. ej. `rich`.
+
+    Returns:
+        Los chunks de todos los módulos públicos del paquete.
+
+    Raises:
+        ModuleNotFoundError: Si el paquete no está instalado en el entorno.
+        ImportError: Si el paquete (no sus submódulos) falla al importarse.
     """
     version = _version(package)
     seen: set[int] = set()

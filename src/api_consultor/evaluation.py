@@ -9,6 +9,7 @@ from pathlib import Path
 from .store import Chunk
 
 DEFAULT_KS = (1, 5, 10)
+"""Valores de k con los que `api eval` informa Recall@k."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +19,11 @@ class EvalCase:
     `expected` son nombres exactos o patrones `fnmatch` (`*`) de `Chunk.qualname`.
     Cada elemento admite alternativas separadas por `|` (basta con que acierte una),
     p. ej. `"json.dumps|library/json.txt#*"`: la API indexada o su página de docs.
+
+    Attributes:
+        question: Pregunta que se lanza a la recuperación.
+        expected: Fuentes que deberían aparecer (nombres, patrones o alternativas).
+        category: Etiqueta para agrupar las métricas.
     """
 
     question: str
@@ -34,7 +40,15 @@ def _matches(qualname: str, pattern: str) -> bool:
 
 
 def first_relevant_rank(ranked: Sequence[str], expected: Sequence[str]) -> int | None:
-    """Posición (desde 1) del primer resultado relevante, o None si no aparece."""
+    """Busca el primer resultado relevante de un ranking.
+
+    Args:
+        ranked: Nombres cualificados recuperados, de mejor a peor.
+        expected: Patrones esperados (ver `EvalCase`).
+
+    Returns:
+        La posición (desde 1), o `None` si ninguno aparece.
+    """
     for position, qualname in enumerate(ranked, start=1):
         if any(_matches(qualname, pattern) for pattern in expected):
             return position
@@ -42,36 +56,72 @@ def first_relevant_rank(ranked: Sequence[str], expected: Sequence[str]) -> int |
 
 
 def recall_at_k(ranked: Sequence[str], expected: Sequence[str], k: int) -> float:
-    """Fracción de fuentes esperadas que aparecen entre los `k` primeros resultados."""
+    """Calcula Recall@k: fracción de lo esperado que aparece entre los `k` primeros.
+
+    Args:
+        ranked: Nombres cualificados recuperados, de mejor a peor.
+        expected: Patrones esperados; no puede estar vacío.
+        k: Cuántos resultados se consideran.
+
+    Returns:
+        Un valor entre 0 y 1.
+    """
     top = ranked[:k]
     found = sum(any(_matches(q, pattern) for q in top) for pattern in expected)
     return found / len(expected)
 
 
 def reciprocal_rank(ranked: Sequence[str], expected: Sequence[str]) -> float:
+    """Calcula el rango recíproco del primer resultado relevante.
+
+    Args:
+        ranked: Nombres cualificados recuperados, de mejor a peor.
+        expected: Patrones esperados (ver `EvalCase`).
+
+    Returns:
+        `1 / posición`, o 0 si ninguno aparece.
+    """
     rank = first_relevant_rank(ranked, expected)
     return 0.0 if rank is None else 1 / rank
 
 
 @dataclass(frozen=True, slots=True)
 class CaseResult:
+    """Lo que recuperó un caso de evaluación.
+
+    Attributes:
+        case: El caso evaluado.
+        ranked: Nombres cualificados recuperados, de mejor a peor.
+    """
+
     case: EvalCase
     ranked: tuple[str, ...]
 
     @property
     def rank(self) -> int | None:
+        """Posición del primer resultado relevante, o `None` si no aparece."""
         return first_relevant_rank(self.ranked, self.case.expected)
 
     def recall(self, k: int) -> float:
+        """Devuelve Recall@k de este caso."""
         return recall_at_k(self.ranked, self.case.expected, k)
 
     @property
     def reciprocal_rank(self) -> float:
+        """Rango recíproco de este caso."""
         return reciprocal_rank(self.ranked, self.case.expected)
 
 
 @dataclass(frozen=True, slots=True)
 class Metrics:
+    """Métricas medias de un conjunto de casos.
+
+    Attributes:
+        cases: Número de casos.
+        recall: Recall@k medio para cada k.
+        mrr: Rango recíproco medio (MRR).
+    """
+
     cases: int
     recall: dict[int, float]
     mrr: float
@@ -79,15 +129,30 @@ class Metrics:
 
 @dataclass(frozen=True, slots=True)
 class EvalReport:
+    """Resultados de una evaluación y sus métricas.
+
+    Attributes:
+        results: Resultado de cada caso.
+        ks: Valores de k para Recall@k, ordenados.
+    """
+
     results: tuple[CaseResult, ...]
     ks: tuple[int, ...]
 
     @property
     def categories(self) -> list[str]:
+        """Categorías presentes, ordenadas."""
         return sorted({result.case.category for result in self.results})
 
     def metrics(self, category: str | None = None) -> Metrics:
-        """Métricas medias, globales o de una categoría (MRR sobre max(ks))."""
+        """Calcula las métricas medias (MRR sobre el mayor de `ks`).
+
+        Args:
+            category: Categoría a medir; `None` para todos los casos.
+
+        Returns:
+            Las métricas, o ceros si no hay casos.
+        """
         selected = [
             r for r in self.results if category is None or r.case.category == category
         ]
@@ -101,16 +166,30 @@ class EvalReport:
         )
 
     def failures(self, within: int) -> list[CaseResult]:
-        """Casos cuya primera fuente relevante no está entre los `within` primeros."""
+        """Lista los casos cuya primera fuente relevante queda fuera del top.
+
+        Args:
+            within: Tamaño del top que se considera acierto.
+
+        Returns:
+            Los casos con rango superior a `within` o sin acierto.
+        """
         return [r for r in self.results if r.rank is None or r.rank > within]
 
 
 def missing_sources(
     cases: Sequence[EvalCase], qualnames: Collection[str]
 ) -> list[tuple[EvalCase, str]]:
-    """Fuentes esperadas que no coinciden con nada de lo indexado.
+    """Busca fuentes esperadas que no coinciden con nada de lo indexado.
 
     Esos casos no pueden acertar: suelen indicar que falta indexar algo.
+
+    Args:
+        cases: Casos de evaluación.
+        qualnames: Nombres cualificados presentes en el índice.
+
+    Returns:
+        Pares (caso, patrón) de cada patrón sin coincidencias.
     """
     return [
         (case, pattern)
@@ -126,7 +205,20 @@ def evaluate(
     ks: Sequence[int] = DEFAULT_KS,
     on_result: Callable[[CaseResult], None] | None = None,
 ) -> EvalReport:
-    """Ejecuta `retrieve(pregunta, k)` para cada caso y agrega las métricas."""
+    """Ejecuta la recuperación para cada caso y agrega las métricas.
+
+    Args:
+        retrieve: Función `(pregunta, k) -> fragmentos`.
+        cases: Casos a evaluar.
+        ks: Valores de k para Recall@k.
+        on_result: Llamada opcional tras cada caso (p. ej. para una barra de progreso).
+
+    Returns:
+        El informe con los resultados de todos los casos.
+
+    Raises:
+        ValueError: Si `ks` está vacío o contiene valores menores que 1.
+    """
     sorted_ks = tuple(sorted(set(ks)))
     if not sorted_ks or sorted_ks[0] < 1:
         message = "ks debe contener enteros positivos"
@@ -142,7 +234,18 @@ def evaluate(
 
 
 def load_cases(path: Path) -> list[EvalCase]:
-    """Lee casos de un TOML con tablas `[[case]]` (question, expected, category)."""
+    """Lee casos de un TOML con tablas `[[case]]` (question, expected, category).
+
+    Args:
+        path: Fichero TOML con los casos.
+
+    Returns:
+        Los casos, en el orden del fichero.
+
+    Raises:
+        ValueError: Si algún caso está mal formado.
+        tomllib.TOMLDecodeError: Si el fichero no es TOML válido.
+    """
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     raw = data.get("case", [])
     if not isinstance(raw, list):

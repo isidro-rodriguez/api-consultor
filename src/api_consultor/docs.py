@@ -11,14 +11,18 @@ from pathlib import Path
 from .store import Chunk
 
 SUFFIXES = frozenset({".txt", ".md", ".rst"})
-CHUNK_CHARS = 1500  # ~400 tokens: 5 fragmentos caben de sobra en 8k de contexto
+"""Extensiones de los ficheros de documentación que se indexan."""
+
+CHUNK_CHARS = 1500
+"""Tamaño máximo de un fragmento de documentación (~400 tokens)."""
 
 # Encabezados estilo Setext (rst, Sphinx text, Markdown) y ATX (Markdown).
 _SETEXT = re.compile(r'^([=\-*^~"+`#])\1{2,}\s*$')
 _ATX = re.compile(r"^#{1,6}\s+(\S.*?)\s*#*\s*$")
 _VERSION = re.compile(r"\d+(?:\.\d+)+")
 
-type Files = list[tuple[str, str]]  # (ruta relativa, texto)
+type Files = list[tuple[str, str]]
+"""Ficheros de una fuente: pares (ruta relativa, texto)."""
 
 
 def _decode(data: bytes) -> str:
@@ -72,6 +76,12 @@ def collect(docs_dir: Path) -> dict[str, Files]:
     """Agrupa la documentación por fuente: un .zip o carpeta = una fuente.
 
     Los ficheros sueltos de primer nivel forman la fuente "docs".
+
+    Args:
+        docs_dir: Carpeta con la documentación; se ignoran las entradas ocultas.
+
+    Returns:
+        Para cada fuente, sus ficheros de texto con ruta relativa.
     """
     sources: dict[str, Files] = {}
     loose: Files = []
@@ -92,10 +102,19 @@ def collect(docs_dir: Path) -> dict[str, Files]:
 def materialize(
     docs_dir: Path, source: str, cache_dir: Path, exclude: Sequence[str] = ()
 ) -> Path:
-    """Carpeta con los ficheros de `source`, para poder enlazarlos.
+    """Localiza en disco los ficheros de una fuente, para poder enlazarlos.
 
     Una carpeta o los ficheros sueltos ya existen en disco; un `.zip` se extrae a
-    `cache_dir/source` (solo los textos no excluidos).
+    `cache_dir/source` (solo los textos no excluidos), sustituyendo lo anterior.
+
+    Args:
+        docs_dir: Carpeta con la documentación.
+        source: Nombre de la fuente (carpeta, `.zip` sin extensión o `docs`).
+        cache_dir: Carpeta donde extraer los `.zip`.
+        exclude: Patrones `fnmatch` de ruta que no se extraen.
+
+    Returns:
+        La carpeta que contiene los ficheros de la fuente.
     """
     folder = docs_dir / source
     if folder.is_dir():
@@ -115,7 +134,16 @@ def _heading_line(lines: Sequence[str], title: str, start: int) -> int:
 
 
 def sections(text: str) -> Iterator[tuple[str, str]]:
-    """Divide un texto en (título, cuerpo) usando sus encabezados."""
+    """Divide un texto en secciones usando sus encabezados (Setext o ATX).
+
+    Ignora los encabezados dentro de bloques de código.
+
+    Args:
+        text: Texto en `.md`, `.rst` o `.txt`.
+
+    Yields:
+        Pares (título, cuerpo); la primera sección puede tener título vacío.
+    """
     lines = text.splitlines()
     title: str = ""
     body: list[str] = []
@@ -159,7 +187,17 @@ def _wrap(paragraph: str, limit: int) -> Iterator[str]:
 
 
 def split_text(body: str, limit: int) -> Iterator[str]:
-    """Agrupa párrafos hasta `limit` caracteres sin cortarlos."""
+    """Agrupa párrafos hasta un tamaño máximo sin cortarlos.
+
+    Un párrafo mayor que `limit` se parte por saltos de línea.
+
+    Args:
+        body: Texto de una sección.
+        limit: Tamaño máximo de cada trozo.
+
+    Yields:
+        Trozos de texto en orden.
+    """
     buffer: list[str] = []
     size = 0
     for paragraph in re.split(r"\n\s*\n", body):
@@ -182,10 +220,19 @@ def extract_doc_chunks(
     exclude: Sequence[str] = (),
     root: Path | None = None,
 ) -> list[Chunk]:
-    """Un chunk por trozo de sección; `exclude` son patrones fnmatch de ruta.
+    """Convierte los ficheros de una fuente en chunks, uno por trozo de sección.
 
     Con `root` (carpeta de la fuente) los chunks recuerdan fichero y línea para poder
     abrirlos; sin ella no hay ubicación.
+
+    Args:
+        source: Nombre de la fuente; si contiene una versión (`py-3.15`) se registra.
+        files: Ficheros de la fuente (ruta relativa y texto).
+        exclude: Patrones `fnmatch` de ruta a omitir.
+        root: Carpeta donde están los ficheros en disco.
+
+    Returns:
+        Los chunks, etiquetados `ruta#título` (con ` [n]` si hay varios).
     """
     found = _VERSION.search(source)
     version = found.group() if found else "desconocida"
