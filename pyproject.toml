@@ -1,9 +1,36 @@
 [project]
 name = "api-consultor"
-version = "0.1.0"
+version = "0.2.0"
 description = "Consultor de APIs Python offline con Ollama y RAG"
 readme = "README.md"
 requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Isidro Rodríguez González" }]
+keywords = [
+    "api",
+    "docs",
+    "rag",
+    "ollama",
+    "llm",
+    "offline",
+    "cli",
+    "docstrings",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Natural Language :: Spanish",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Documentation",
+    "Typing :: Typed",
+]
 dependencies = [
     "ollama>=0.5.1",
     "pyfiglet>=1.0",
@@ -12,34 +39,39 @@ dependencies = [
     "typer>=0.27.3",
 ]
 
+[project.urls]
+Homepage = "https://github.com/isidro-rodriguez/api-consultor"
+Repository = "https://github.com/isidro-rodriguez/api-consultor"
+Changelog = "https://github.com/isidro-rodriguez/api-consultor/blob/main/CHANGELOG.md"
+Issues = "https://github.com/isidro-rodriguez/api-consultor/issues"
+
 [project.scripts]
 api = "api_consultor.cli:app"
 
 [dependency-groups]
-dev = [
-    "pre-commit>=4.0",
-    "pytest>=8.0",
-    "pytest-cov>=6.0",
-    "ruff",
-    "ty",
-]
+dev = ["pre-commit>=4.0", "pytest>=8.0", "pytest-cov>=6.0", "ruff", "ty"]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [tool.ruff.lint]
 select = [
-    "E", "F", "I", "UP", "B", "SIM",
-    "ANN",  # anotaciones de tipo obligatorias
-    "PT",   # buenas prácticas de pytest
-    "PTH",  # pathlib en lugar de os.path
+    "E",
+    "F",
+    "I",
+    "UP",
+    "B",
+    "SIM",
+    "ANN", # anotaciones de tipo obligatorias
+    "PT",  # buenas prácticas de pytest
+    "PTH", # pathlib en lugar de os.path
     "RUF",
-    "D",    # docstrings (estilo Google) en lo público
+    "D",   # docstrings (estilo Google) en lo público
 ]
 ignore = [
-    "D105",  # métodos mágicos
-    "D107",  # __init__: se documenta en la clase
+    "D105", # métodos mágicos
+    "D107", # __init__: se documenta en la clase
 ]
 
 [tool.ruff.lint.pydocstyle]

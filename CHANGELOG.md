@@ -5,10 +5,12 @@ Todos los cambios relevantes de este proyecto se documentan aquí.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el
 proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
-## [Unreleased]
+## [0.2.0] - 2026-10-21
 
 ### Añadido
 
+- Metadatos para PyPI (licencia MIT, autor, clasificadores, URLs), `LICENSE` y
+  `py.typed`; el CI valida el paquete con `twine check --strict`.
 - CI de GitHub Actions: calidad (`ruff`, `ty`, `uv.lock`), tests en Linux y Windows con
   Python 3.12 y 3.13, y comprobación del wheel en un entorno limpio. Flujo de
   publicación en PyPI por etiqueta `vX.Y.Z` (publicación de confianza) y Dependabot
@@ -16,7 +18,6 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 - Instalable como herramienta global (`uv tool install`). El `Modelfile` viaja dentro
   del paquete y el nuevo comando `api setup` descarga los modelos y crea `api-consultor`
   (idempotente).
-
 - `api index --python ENTORNO`: indexa paquetes instalados en el venv de un proyecto
   (no solo en el de la herramienta). Se hace con una sonda que corre con el Python de
   ese entorno; cada fuente recuerda su intérprete y `api update` y el aviso de versión
@@ -26,31 +27,6 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   el panel de `api ask` indica «fichero no disponible» y no pone enlace.
 - `api index-docs` ofrece copiar la documentación a la carpeta del usuario
   (`--copy` / `--no-copy` para no preguntar).
-
-### Cambiado
-
-- La documentación local se busca por defecto en `<carpeta de datos>/docs` (antes
-  `./docs`). Para el comportamiento anterior: `[paths] docs = "docs"` en `config.toml`.
-- Formato de índice 4: las rutas de los fragmentos son relativas a la raíz de la fuente
-  (`sources.root`). Un índice anterior se migra solo al abrirlo.
-- La base de datos se guarda por defecto en la carpeta de datos del usuario, no en
-  `data/` del proyecto. Para conservar la anterior: moverla allí o fijar
-  `[paths] db = "data/consultor.db"` en `config.toml`.
-- Docstrings en estilo Google en toda la API pública (constantes incluidas); ruff exige
-  docstrings en lo público (`D`, convención Google).
-
-### Corregido
-
-- Títulos o nombres con corchetes (`[tool.ruff]`) rompían las tablas de Rich al
-  interpretarse como estilos; ahora se imprimen literalmente.
-- El contexto enviado al modelo escapa los atributos XML (comillas, `<`, `&`).
-- `api sources --remove` contaba dos veces un nombre repetido en la confirmación.
-- `api index` ya no se cae con paquetes que fallan al importarse o con nombres inválidos:
-  avisa y sigue con el siguiente.
-- Las rutas de `config.toml` admiten `~`.
-
-### Añadido
-
 - `api index` también indexa las propiedades (`property` y `cached_property`) con
   docstring, con su fichero y línea.
 - Los miembros heredados de clases base *privadas* del mismo paquete (p. ej.
@@ -90,11 +66,19 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Cambiado
 
+- La documentación local se busca por defecto en `<carpeta de datos>/docs` (antes
+  `./docs`). Para el comportamiento anterior: `[paths] docs = "docs"` en `config.toml`.
+- Formato de índice 4: las rutas de los fragmentos son relativas a la raíz de la fuente
+  (`sources.root`). Un índice anterior se migra solo al abrirlo.
+- La base de datos se guarda por defecto en la carpeta de datos del usuario, no en
+  `data/` del proyecto. Para conservar la anterior: moverla allí o fijar
+  `[paths] db = "data/consultor.db"` en `config.toml`.
+- Docstrings en estilo Google en toda la API pública (constantes incluidas); ruff exige
+  docstrings en lo público (`D`, convención Google).
 - Los docstrings largos de las APIs ya no se truncan a 2000 caracteres: se reparten en
   varios fragmentos respetando las secciones (`Parameters`, `Returns`, `Examples`…) y
   los párrafos. Las continuaciones se etiquetan `nombre [2]` y repiten la firma. Hay que
   reindexar los paquetes (`api index <paquete>`) para beneficiarse.
-
 - La versión de un paquete se resuelve por su distribución instalada (`yaml` → PyYAML),
   no por el nombre del módulo; la biblioteca estándar usa la versión de Python.
 - `Consultor.retrieve()` acepta un límite opcional `k` (por defecto, `retrieval_k`).
@@ -108,6 +92,13 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Corregido
 
+- Títulos o nombres con corchetes (`[tool.ruff]`) rompían las tablas de Rich al
+  interpretarse como estilos; ahora se imprimen literalmente.
+- El contexto enviado al modelo escapa los atributos XML (comillas, `<`, `&`).
+- `api sources --remove` contaba dos veces un nombre repetido en la confirmación.
+- `api index` ya no se cae con paquetes que fallan al importarse o con nombres inválidos:
+  avisa y sigue con el siguiente.
+- Las rutas de `config.toml` admiten `~`.
 - La tabla de fallos de `api eval` colapsaba la columna del rango y recortaba en exceso
   la de fuentes esperadas.
 

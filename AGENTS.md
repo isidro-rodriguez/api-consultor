@@ -139,6 +139,8 @@ la recuperación.
    - Hecho: `uv tool install`, `api setup`, `Modelfile` empaquetado, datos y docs en la
      carpeta del usuario, formato de índice 4 (rutas relativas + raíz), `--python`,
      `--relocate`.
-10. Repositorio PyPi
+10. Repositorio PyPi: metadatos, LICENSE (MIT) y `py.typed` listos. Pendiente (manual):
+    publicador de confianza en PyPI y entorno `pypi` en GitHub (ver README); luego añadir
+    `uv tool install api-consultor` a la instalación.
 11. ~~CI de Github (windows, linux, publicación en pypi) y dependabot~~ (hecho:
     `.github/`; la primera publicación requiere configurar el publicador en PyPI).

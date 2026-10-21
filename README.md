@@ -103,7 +103,7 @@ esperadas aparecen entre los primeros resultados:
 - **MRR:** media de `1/posición` de la primera fuente correcta (1,0 es lo ideal).
 
 Los casos son tablas `[[case]]` en un TOML (`question`, `expected`, `category`); ver
-[evals/stdlib.toml](evals/stdlib.toml). `expected` admite nombres exactos, comodines `*`
+[evals/stdlib.toml](https://github.com/isidro-rodriguez/api-consultor/blob/main/evals/stdlib.toml). `expected` admite nombres exactos, comodines `*`
 y alternativas con `|` (`"json.dumps|library/json.txt#*"`). Si alguna fuente esperada
 no está en el índice, `api eval` lo avisa: ese caso no puede acertar. Úsalo antes y
 después de cada cambio en la recuperación o el chunking. Ejecútalo con Ollama en
@@ -168,8 +168,11 @@ uv run pytest
   publisher* (propietario `isidro-rodriguez`, repositorio `api-consultor`, flujo
   `publish.yml`, entorno `pypi`), y crea el entorno `pypi` en GitHub (Settings →
   Environments).
-- Versionado SemVer, commits convencionales y cambios en [CHANGELOG.md](CHANGELOG.md).
-  Guía para agentes de código en [AGENTS.md](AGENTS.md).
+- **Nueva versión:** sube `version` en `pyproject.toml` (y `uv lock`), mueve lo de
+  *Unreleased* a la versión en el CHANGELOG, haz commit y
+  `git tag vX.Y.Z && git push --tags`. `publish.yml` hace el resto.
+- Versionado SemVer, commits convencionales y cambios en [CHANGELOG.md](https://github.com/isidro-rodriguez/api-consultor/blob/main/CHANGELOG.md).
+  Guía para agentes de código en [AGENTS.md](https://github.com/isidro-rodriguez/api-consultor/blob/main/AGENTS.md).
 
 ## Limitaciones conocidas
 
