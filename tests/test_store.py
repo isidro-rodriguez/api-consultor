@@ -300,3 +300,23 @@ def test_remove_deletes_the_source_from_every_index(store: Store) -> None:
 
 def test_remove_unknown_source_returns_zero(store: Store) -> None:
     assert store.remove("nada") == 0
+
+
+def test_location_is_stored_and_returned(store: Store) -> None:
+    located = Chunk("pkg.a", "pkg", "1", "x", "/ruta/a.py", 7)
+    store.replace("pkg", [located], [[1.0, 0, 0, 0]])
+    assert store.by_name(["pkg.a"]) == [located]
+    assert store.search_scored([1.0, 0, 0, 0], 1)[0][0] == located
+
+
+def test_opening_an_index_without_locations_migrates_it(tmp_path: Path) -> None:
+    path = tmp_path / "v2.db"
+    with Store(path, DIM) as first:
+        first.replace("pkg", [Chunk("a", "pkg", "1", "x")], [[1.0, 0, 0, 0]])
+    legacy = sqlite3.connect(path)
+    legacy.execute("ALTER TABLE chunks DROP COLUMN path")
+    legacy.execute("ALTER TABLE chunks DROP COLUMN line")
+    legacy.commit()
+    legacy.close()
+    with Store(path, DIM) as migrated:
+        assert migrated.by_name(["a"]) == [Chunk("a", "pkg", "1", "x", "", 0)]

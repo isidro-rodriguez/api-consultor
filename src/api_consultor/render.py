@@ -1,7 +1,8 @@
 """Presentación en consola: tema Monokai, Markdown en streaming, tablas y avisos."""
 
 import shutil
-from collections.abc import Collection, Iterable, Sequence
+from collections.abc import Callable, Collection, Iterable, Sequence
+from pathlib import Path
 
 import pyfiglet
 from rich import box
@@ -21,6 +22,7 @@ from rich.progress import (
 )
 from rich.spinner import Spinner
 from rich.status import Status
+from rich.style import Style
 from rich.table import Column, Table
 from rich.text import Text
 from rich.theme import Theme
@@ -31,6 +33,7 @@ from .config import SETTINGS
 from .consultor import Retrieval
 from .evaluation import EvalReport
 from .store import Chunk, SourceInfo
+from .userconfig import UserConfig
 from .versions import VersionStatus
 
 # Paleta Monokai
@@ -195,11 +198,13 @@ def show_sources(
     chunks: Sequence[Chunk],
     stale: Collection[str] = (),
     citations: Citations | None = None,
+    link: Callable[[Chunk], str | None] | None = None,
 ) -> None:
     """Panel con los fragmentos usados, su identificador y si la respuesta los citó.
 
     Marca con ✔ los citados y con ⚠ las fuentes con versión obsoleta. Si el modelo
-    citó identificadores inexistentes o no citó nada, lo avisa bajo el panel.
+    citó identificadores inexistentes o no citó nada, lo avisa bajo el panel. Con
+    `link`, el nombre es un hiperenlace de terminal a la ubicación del fragmento.
     """
     if not chunks:
         return
@@ -217,7 +222,11 @@ def show_sources(
         mark = Text(doc_id(position), style="success" if position in cited else "muted")
         if position in cited:
             mark.append(" ✔", style="success")
-        grid.add_row(mark, chunk.qualname, origin)
+        name = Text(chunk.qualname)
+        url = link(chunk) if link is not None else None
+        if url is not None:
+            name.stylize(Style(link=url, underline=True))
+        grid.add_row(mark, name, origin)
     panel = Panel(
         grid,
         title="Fuentes",
@@ -493,3 +502,25 @@ def show_status_table(
             source.indexed_at[:10] or "—",
         )
     console.print(_fit(table))
+
+
+def show_user_config(config: UserConfig, path: Path) -> None:
+    """Muestra el fichero de preferencias y los valores efectivos."""
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(style="muted", justify="right")
+    grid.add_column(style=FG, overflow="fold")
+    grid.add_row("Fichero", f"{path}" + ("" if config.source else " (no existe)"))
+    grid.add_row("Editor", " ".join(config.command))
+    grid.add_row("Enlace", config.link)
+    console.print(
+        _fit(
+            Panel(
+                grid,
+                title="Preferencias",
+                title_align="left",
+                border_style="muted",
+                box=box.ROUNDED,
+                padding=(0, 1),
+            )
+        )
+    )

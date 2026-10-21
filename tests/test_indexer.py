@@ -1,5 +1,6 @@
 import logging
 import platform
+from pathlib import Path
 
 import pytest
 
@@ -112,3 +113,19 @@ def test_version_comes_from_the_distribution_not_the_import_name(
     package = make_package("yamlish", FILES)
     fake_distribution("YamlLib", "2.0", top_level="yamlish")
     assert {chunk.version for chunk in extract_chunks(package)} == {"2.0"}
+
+
+def test_api_chunks_remember_file_and_line(make_package: PackageFactory) -> None:
+    package = make_package(
+        "synth_loc",
+        {
+            "__init__.py": '"""Módulo."""\n',
+            "core.py": '"""Núcleo."""\nimport os\n\n\ndef run():\n    """Ejecuta."""\n',
+        },
+    )
+    located = {c.qualname: c for c in extract_chunks(package)}
+    func = located["synth_loc.core.run"]
+    assert Path(func.path).name == "core.py"
+    assert func.line == 5
+    assert located["synth_loc"].line == 1
+    assert located["synth_loc.core"].path == func.path

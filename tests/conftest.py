@@ -51,6 +51,14 @@ def isolated_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.fixture(autouse=True)
+def isolated_user_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Nunca se lee el `config.toml` real del usuario; por defecto no existe."""
+    path = tmp_path / "user-config" / "config.toml"
+    monkeypatch.setenv("API_CONSULTOR_CONFIG", str(path))
+    return path
+
+
+@pytest.fixture(autouse=True)
 def block_real_ollama(monkeypatch: pytest.MonkeyPatch) -> None:
     """Red de seguridad: ningún test puede hablar con un Ollama real."""
 

@@ -3,6 +3,7 @@
 import logging
 import platform
 import sqlite3
+import subprocess
 from collections.abc import Callable, Generator, Iterator, Sequence
 from contextlib import contextmanager
 from functools import partial
@@ -19,7 +20,7 @@ from . import __version__
 from .citations import check_citations
 from .config import SETTINGS
 from .consultor import Consultor, format_context
-from .docs import collect, extract_doc_chunks
+from .docs import collect, extract_doc_chunks, origin
 from .evaluation import DEFAULT_KS, evaluate, load_cases, missing_sources
 from .indexer import extract_chunks
 from .llm import embed
@@ -35,12 +36,21 @@ from .render import (
     show_sources,
     show_sources_table,
     show_status_table,
+    show_user_config,
     show_version,
     status,
     stream_markdown,
     style_typer_help,
 )
 from .store import Chunk, IndexIntegrityError, SourceInfo, Store
+from .userconfig import (
+    UserConfig,
+    UserConfigError,
+    chunk_link,
+    config_path,
+    editor_command,
+    load,
+)
 from .versions import check_versions
 
 BATCH_SIZE = 32
@@ -113,7 +123,7 @@ def _handled_errors() -> Generator[None]:
     """Convierte los fallos típicos de Ollama y del índice en mensajes legibles."""
     try:
         yield
-    except IndexIntegrityError as exc:
+    except (IndexIntegrityError, UserConfigError) as exc:
         _fail(str(exc), exc.hint)
     except ConnectionError:
         _fail(
@@ -221,7 +231,13 @@ def index_docs(
     results: list[SourceInfo] = []
     with _store() as store, progress_bar() as progress, _handled_errors():
         for source, files in collect(directory).items():
-            build = partial(extract_doc_chunks, source, files, exclude or ())
+            build = partial(
+                extract_doc_chunks,
+                source,
+                files,
+                exclude or (),
+                origin(directory, source),
+            )
             if info := _index_source(store, progress, source, build, "docs"):
                 results.append(info)
     show_sources_table(results, "Indexado")
@@ -256,6 +272,7 @@ def _warn_stale(store: Store) -> frozenset[str]:
 def _answer(
     consultor: Consultor, question: str, stale: frozenset[str], *, debug: bool = False
 ) -> None:
+    config = load()  # falla antes de generar si config.toml es inválido
     with status("Buscando en la documentación..."):
         retrieval = consultor.search(question)
     if debug:
@@ -269,7 +286,9 @@ def _answer(
         return
     answer = stream_markdown(consultor.stream(question, retrieval.chunks))
     citations = check_citations(answer, len(retrieval.chunks))
-    show_sources(retrieval.chunks, stale, citations)
+    show_sources(
+        retrieval.chunks, stale, citations, link=lambda c: chunk_link(config, c)
+    )
 
 
 @app.command()
@@ -355,6 +374,56 @@ def _remove_sources(store: Store, names: list[str], *, yes: bool) -> None:
         raise typer.Exit(code=1)
     for name in dict.fromkeys(names):
         print_hint(f"Eliminada {name}: {store.remove(name)} fragmentos.")
+
+
+@app.command("open")
+def open_command(
+    name: Annotated[
+        str, typer.Argument(metavar="NOMBRE", help="Símbolo o documento indexado.")
+    ],
+) -> None:
+    """Abre en tu editor el fichero (y la línea) de un símbolo o documento indexado."""
+    with _handled_errors():
+        config = load()
+        with _store(check_model=False) as store:
+            matches = store.by_name([name], limit_per_name=6) or store.by_short_name(
+                [name]
+            )
+        chunk = _pick(name, matches)
+        command = editor_command(config, chunk)
+    print_hint(f"Abriendo {chunk.path}:{chunk.line}")
+    try:
+        subprocess.run(command, check=False)
+    except OSError as exc:
+        _fail(
+            f"No se pudo ejecutar el editor `{command[0]}`: {exc.strerror or exc}.",
+            f"Configúralo en {config_path()} con `api config`.",
+        )
+
+
+def _pick(name: str, matches: list[Chunk]) -> Chunk:
+    """Elige el fragmento a abrir o explica por qué no se puede."""
+    if not matches:
+        _fail(f"No hay nada indexado llamado `{name}`.", "Revisa `api sources`.")
+    exact = [c for c in matches if c.qualname == name]
+    if len(exact) != 1 and len({c.qualname for c in matches}) > 1:
+        options = ", ".join(sorted({c.qualname for c in matches}))
+        _fail(f"`{name}` es ambiguo.", f"Indica el nombre completo: {options}.")
+    chunk = (exact or matches)[0]
+    if not chunk.path:
+        _fail(
+            f"`{chunk.qualname}` no tiene fichero asociado.",
+            "Viene de un .zip o se indexó antes de esta versión: reindéxalo.",
+        )
+    return chunk
+
+
+@app.command()
+def config() -> None:
+    """Muestra dónde está `config.toml` y qué editor y enlaces se usan."""
+    with _handled_errors():
+        current: UserConfig = load()
+    show_user_config(current, config_path())
 
 
 @app.command()

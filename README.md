@@ -82,6 +82,25 @@ no está en el índice, `api eval` lo avisa: ese caso no puede acertar. Úsalo a
 después de cada cambio en la recuperación o el chunking. Ejecútalo con Ollama en
 marcha: usa el índice real.
 
+## Editor y enlaces
+
+El panel «Fuentes» enlaza cada fragmento con su fichero (hiperenlace de terminal, si tu
+terminal lo admite) y `api open NOMBRE` lo abre en tu editor, en la línea del símbolo o
+sección. Los chunks de un `.zip` no tienen fichero. Tras actualizar, reindexa para
+guardar las ubicaciones.
+
+Editor por defecto: Windows `edit`, Linux `nano`, macOS TextEdit (`open -t`). Cámbialo en
+`config.toml` (`api config` muestra su ruta y los valores efectivos):
+
+```toml
+[editor]
+command = ["code", "--goto", "{file}:{line}"]   # lista; campos {file} {path} {uri} {line}
+link = "vscode://file/{path}:{line}"            # por defecto "{uri}" (file://...)
+```
+
+Ruta: `%APPDATA%\api-consultor` (Windows), `~/.config/api-consultor` (Linux, o
+`$XDG_CONFIG_HOME`), `~/Library/Application Support/api-consultor` (macOS).
+
 ## Configuración
 
 Modelos, ruta de la base, fragmentos enviados al modelo (`retrieval_k`), candidatos

@@ -11,7 +11,8 @@ from typing import Self
 
 import sqlite_vec
 
-FORMAT_VERSION = 2  # 1: sin metadatos (tablas chunks/vec_chunks/FTS); 2: meta + sources
+# 1: sin metadatos (tablas chunks/vec_chunks/FTS); 2: meta + sources; 3: path y line
+FORMAT_VERSION = 3
 
 
 class IndexIntegrityError(Exception):
@@ -28,6 +29,8 @@ class Chunk:
     package: str
     version: str
     content: str
+    path: str = ""  # fichero de origen editable ("" si no existe: zip, builtin)
+    line: int = 0  # línea del símbolo o sección en `path` (0 = desconocida)
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,7 +42,7 @@ class SourceInfo:
     indexed_at: str = field(default="", compare=False)
 
 
-_COLUMNS = "qualname, package, version, content"
+_COLUMNS = "qualname, package, version, content, path, line"
 
 
 class Store:
@@ -72,7 +75,9 @@ class Store:
                 qualname TEXT NOT NULL,
                 package TEXT NOT NULL,
                 version TEXT NOT NULL,
-                content TEXT NOT NULL
+                content TEXT NOT NULL,
+                path TEXT NOT NULL DEFAULT '',
+                line INTEGER NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS idx_chunks_package ON chunks(package);
             CREATE INDEX IF NOT EXISTS idx_chunks_qualname ON chunks(qualname);
@@ -93,6 +98,14 @@ class Store:
             );
         """)
         with self._db:
+            columns = {row[1] for row in self._db.execute("PRAGMA table_info(chunks)")}
+            if "path" not in columns:  # índice anterior a los enlaces al editor
+                self._db.execute(
+                    "ALTER TABLE chunks ADD COLUMN path TEXT NOT NULL DEFAULT ''"
+                )
+                self._db.execute(
+                    "ALTER TABLE chunks ADD COLUMN line INTEGER NOT NULL DEFAULT 0"
+                )
             if "chunks_fts" not in existing:  # índice anterior a la búsqueda léxica
                 self._db.execute(
                     "INSERT INTO chunks_fts(rowid, qualname, content) "
@@ -198,8 +211,15 @@ class Store:
             self._db.execute("DELETE FROM chunks WHERE package = ?", (package,))
             for chunk, embedding in zip(chunks, embeddings, strict=True):
                 cur = self._db.execute(
-                    f"INSERT INTO chunks({_COLUMNS}) VALUES (?, ?, ?, ?)",
-                    (chunk.qualname, chunk.package, chunk.version, chunk.content),
+                    f"INSERT INTO chunks({_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        chunk.qualname,
+                        chunk.package,
+                        chunk.version,
+                        chunk.content,
+                        chunk.path,
+                        chunk.line,
+                    ),
                 )
                 self._db.execute(
                     "INSERT INTO vec_chunks(rowid, embedding) VALUES (?, ?)",
@@ -307,7 +327,7 @@ class Store:
             """,
             (sqlite_vec.serialize_float32(list(embedding)), k),
         )
-        return [(Chunk(*row[:4]), float(row[4])) for row in rows]
+        return [(Chunk(*row[:6]), float(row[6])) for row in rows]
 
 
 def _now() -> str:

@@ -66,6 +66,24 @@ def collect(docs_dir: Path) -> dict[str, Files]:
     return sources
 
 
+def origin(docs_dir: Path, source: str) -> Path | None:
+    """Carpeta que contiene los ficheros de `source` (None si viene de un .zip)."""
+    folder = docs_dir / source
+    if folder.is_dir():
+        return folder.resolve()
+    if (docs_dir / f"{source}.zip").is_file():
+        return None
+    return docs_dir.resolve()  # ficheros sueltos
+
+
+def _heading_line(lines: Sequence[str], title: str, start: int) -> int:
+    """Índice (base 0) de la primera línea desde `start` que es el título; -1 si no."""
+    for index in range(start, len(lines)):
+        if lines[index].strip().strip("#").strip() == title:
+            return index
+    return -1
+
+
 def sections(text: str) -> Iterator[tuple[str, str]]:
     """Divide un texto en (título, cuerpo) usando sus encabezados."""
     lines = text.splitlines()
@@ -129,9 +147,16 @@ def split_text(body: str, limit: int) -> Iterator[str]:
 
 
 def extract_doc_chunks(
-    source: str, files: Files, exclude: Sequence[str] = ()
+    source: str,
+    files: Files,
+    exclude: Sequence[str] = (),
+    root: Path | None = None,
 ) -> list[Chunk]:
-    """Un chunk por trozo de sección; `exclude` son patrones fnmatch de ruta."""
+    """Un chunk por trozo de sección; `exclude` son patrones fnmatch de ruta.
+
+    Con `root` (carpeta de la fuente) los chunks recuerdan fichero y línea para poder
+    abrirlos en el editor; sin ella (p. ej. un .zip) no hay ubicación.
+    """
     found = _VERSION.search(source)
     version = found.group() if found else "desconocida"
     chunks: list[Chunk] = []
@@ -139,7 +164,15 @@ def extract_doc_chunks(
         if any(fnmatch(relpath, pattern) for pattern in exclude):
             continue
         counts: Counter[str] = Counter()
+        path = str(root / relpath) if root is not None else ""
+        lines = text.splitlines()
+        cursor = 0
         for title, body in sections(text):
+            line = 1 if root is not None else 0
+            if root is not None and title:
+                found = _heading_line(lines, title, cursor)
+                if found >= 0:
+                    cursor, line = found + 1, found + 1
             base = f"{relpath}#{title}" if title else relpath
             for part in split_text(body, CHUNK_CHARS):
                 counts[base] += (
@@ -147,5 +180,7 @@ def extract_doc_chunks(
                 )
                 n = counts[base]
                 label = base if n == 1 else f"{base} [{n}]"
-                chunks.append(Chunk(label, source, version, f"{label}\n\n{part}"))
+                chunks.append(
+                    Chunk(label, source, version, f"{label}\n\n{part}", path, line)
+                )
     return chunks

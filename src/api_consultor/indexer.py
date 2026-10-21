@@ -7,6 +7,7 @@ import inspect
 import logging
 import pkgutil
 from collections.abc import Iterator
+from pathlib import Path
 from types import ModuleType
 
 from .docs import sections, split_text
@@ -54,6 +55,20 @@ def doc_parts(doc: str, limit: int) -> list[str]:
             parts.append(f"{title}\n{piece}".strip("\n") if index == 0 else piece)
     flush()
     return parts
+
+
+def _location(obj: object) -> tuple[str, int]:
+    """Fichero fuente y línea de definición de `obj`; ("", 0) si no se conocen."""
+    with contextlib.suppress(TypeError, OSError):
+        if inspect.ismodule(obj):
+            file, line = inspect.getsourcefile(obj), 1
+        elif inspect.isfunction(obj) or inspect.isclass(obj):
+            file, line = inspect.getsourcefile(obj), inspect.getsourcelines(obj)[1]
+        else:
+            return "", 0
+        if file is not None and Path(file).is_file():
+            return str(Path(file).resolve()), max(line, 1)
+    return "", 0
 
 
 def _header(qualname: str, obj: object) -> str:
@@ -126,6 +141,7 @@ def extract_chunks(package: str) -> list[Chunk]:
             return
         seen.add(id(obj))
         header = _header(qualname, obj)
+        path, line = _location(obj)
         reserved = len(header) + len(CONTINUATION) + 8  # cabecera, marca y saltos
         limit = max(MAX_CHARS - reserved, MIN_BODY)
         for number, part in enumerate(doc_parts(doc, limit), start=1):
@@ -134,7 +150,7 @@ def extract_chunks(package: str) -> list[Chunk]:
             else:  # continuación: misma cabecera y etiqueta única
                 label = f"{qualname} [{number}]"
                 text = f"{header} (continuación {number})\n\n{part}"
-            chunks.append(Chunk(label, package, version, text))
+            chunks.append(Chunk(label, package, version, text, path, line))
 
     for module in _walk_modules(package):
         add(module.__name__, module)

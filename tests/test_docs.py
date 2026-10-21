@@ -5,6 +5,7 @@ from api_consultor.docs import (
     CHUNK_CHARS,
     collect,
     extract_doc_chunks,
+    origin,
     sections,
     split_text,
 )
@@ -117,3 +118,23 @@ def test_collect_groups_directories_and_loose_files(tmp_path: Path) -> None:
     assert set(sources) == {"mis-notas", "docs"}
     assert sources["mis-notas"][0][0] == "sub/a.md"
     assert [path for path, _ in sources["docs"]] == ["suelto.rst"]
+
+
+def test_doc_chunks_remember_file_and_heading_line(tmp_path: Path) -> None:
+    text = "# Uno\n\ncuerpo\n\n# Dos\n\notro\n\n# Uno\n\nrepetido\n"
+    chunks = extract_doc_chunks("n", [("a.md", text)], root=tmp_path)
+    assert {c.path for c in chunks} == {str(tmp_path / "a.md")}
+    assert [c.line for c in chunks] == [1, 5, 9]
+
+
+def test_doc_chunks_from_zip_have_no_location() -> None:
+    chunks = extract_doc_chunks("n", [("a.md", "# T\n\nx\n")])
+    assert [(c.path, c.line) for c in chunks] == [("", 0)]
+
+
+def test_origin_distinguishes_folders_zips_and_loose_files(tmp_path: Path) -> None:
+    (tmp_path / "carpeta").mkdir()
+    (tmp_path / "paquete.zip").write_bytes(b"")
+    assert origin(tmp_path, "carpeta") == (tmp_path / "carpeta").resolve()
+    assert origin(tmp_path, "paquete") is None
+    assert origin(tmp_path, "docs") == tmp_path.resolve()

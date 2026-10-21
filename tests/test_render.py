@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from io import StringIO
+from pathlib import Path
 
 import pytest
 from rich.console import Console
@@ -7,6 +8,7 @@ from rich.console import Console
 from api_consultor import render
 from api_consultor.citations import Citations
 from api_consultor.store import Chunk, SourceInfo
+from api_consultor.userconfig import UserConfig
 
 type Capture = Callable[[int], StringIO]
 
@@ -132,3 +134,30 @@ def test_show_sources_warns_when_nothing_is_cited(capture: Capture) -> None:
     buffer = capture(100)
     render.show_sources([Chunk("a.f", "a", "1.0", "x")], citations=Citations((), ()))
     assert "no cita ninguna fuente" in buffer.getvalue()
+
+
+def test_show_sources_links_names_when_a_link_is_given(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    buffer = StringIO()
+    out = Console(
+        file=buffer,
+        width=100,
+        theme=render.THEME,
+        force_terminal=True,
+        color_system="standard",
+    )
+    monkeypatch.setattr(render, "console", out)
+    chunks = [Chunk("a.f", "a", "1", "x", "/p/a.py", 3), Chunk("a.g", "a", "1", "y")]
+    render.show_sources(chunks, link=lambda c: f"file://{c.path}" if c.path else None)
+    text = buffer.getvalue()
+    assert text.count("\x1b]8;id=") == 1  # solo el fragmento con ubicación
+    assert "file:///p/a.py" in text
+
+
+def test_show_user_config_lists_effective_values(capture: Capture) -> None:
+    buffer = capture(100)
+    render.show_user_config(UserConfig(("nano", "{file}")), Path("/x/config.toml"))
+    text = buffer.getvalue()
+    assert "nano {file}" in text
+    assert "(no existe)" in text
