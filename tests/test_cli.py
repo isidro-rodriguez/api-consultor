@@ -53,7 +53,22 @@ def test_version_flag_shows_panel() -> None:
 
 def test_no_arguments_shows_help() -> None:
     result = runner.invoke(app, [])
-    assert "Usage" in result.output
+    assert "Uso:" in result.output
+
+
+def test_help_texts_are_in_spanish() -> None:
+    result = runner.invoke(app, ["eval", "--help"])
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    for text in ("Uso:", "[OPCIONES]", "Argumentos", "Opciones", "Muestra esta ayuda"):
+        assert text in plain
+    for text in ("Usage", "Options", "Show this message"):
+        assert text not in plain
+
+
+def test_usage_errors_suggest_help_in_spanish() -> None:
+    result = runner.invoke(app, ["eval", "--nope"])
+    assert result.exit_code == 2
+    assert "para ver la ayuda" in re.sub(r"\x1b\[[0-9;]*m", "", result.output)
 
 
 def test_index_docs_then_sources(indexed: StubOllama) -> None:

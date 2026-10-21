@@ -77,8 +77,10 @@ app = typer.Typer(
     add_completion=False,
     pretty_exceptions_show_locals=False,
     rich_markup_mode="rich",
+    options_metavar="[OPCIONES]",
+    subcommand_metavar="COMANDO [ARGS]...",
 )
-"""Aplicación Typer; la ayuda de cada comando es su docstring (una línea)."""
+"""Aplicación Typer: cada comando lleva `short_help` (una línea) y docstring."""
 
 
 def _version_details() -> list[tuple[str, str]]:
@@ -242,8 +244,11 @@ def _index_packages(
     return results
 
 
-@app.command()
-def index(
+@app.command(
+    name="index",
+    short_help="Indexa paquetes Python instalados. [muted](firmas y docstrings)[/]",
+)
+def index_command(
     packages: Annotated[
         list[str] | None,
         typer.Argument(
@@ -271,7 +276,13 @@ def index(
         ),
     ] = None,
 ) -> None:
-    """Indexa paquetes Python instalados (firmas y docstrings)."""
+    """Indexa paquetes Python instalados (firmas y docstrings).
+
+    Importa cada paquete y guarda un fragmento por módulo, clase, función y propiedad
+    pública con su firma, docstring, fichero y línea. Por defecto usa el entorno de la
+    herramienta; con [info]--python[/] indexa los paquetes del venv de un proyecto.
+    Reindexar un paquete sustituye su versión anterior en el índice.
+    """
     names = [] if packages is None else packages
     if not names and not stdlib:
         _fail("Indica algún paquete o `--stdlib`.", "Ejemplo: `api index requests`.")
@@ -314,8 +325,12 @@ def _doc_chunks(
     return Extraction(chunks, str(root))
 
 
-@app.command("index-docs")
-def index_docs(
+@app.command(
+    name="index-docs",
+    short_help="Indexa documentación local. "
+    "[muted](txt, md o rst en ficheros, carpetas o zip)[/]",
+)
+def index_docs_command(
     directory: Annotated[
         Path | None,
         typer.Argument(
@@ -346,7 +361,14 @@ def index_docs(
         ),
     ] = None,
 ) -> None:
-    """Indexa documentación local (.txt, .md, .rst; sueltos, en carpetas o en .zip)."""
+    """Indexa documentación local (.txt, .md, .rst; sueltos, en carpetas o en .zip).
+
+    Cada carpeta o .zip del directorio es una fuente y los ficheros sueltos forman la
+    fuente «docs»; el texto se trocea por secciones y cada fragmento guarda su enlace.
+    Los .zip se extraen a [muted]docs-cache/[/]. Si el directorio está fuera de la
+    carpeta de documentación del usuario, ofrece copiarlo allí para no perderlo al
+    mover o borrar el original.
+    """
     directory = directory or SETTINGS.docs_dir
     if not directory.is_dir():
         _fail(
@@ -449,13 +471,18 @@ def _answer(
     )
 
 
-@app.command()
-def ask(
+@app.command(
+    name="ask",
+    short_help="Consulta lo indexado y responde con el modelo local.",
+)
+def ask_command(
     ctx: typer.Context,
     question: Annotated[
         str | None,
         typer.Argument(
-            help="Pregunta; sin ella, modo interactivo.", show_default=False
+            metavar="[PREGUNTA]",
+            help="Pregunta; sin ella, modo interactivo.",
+            show_default=False,
         ),
     ] = None,
     debug: Annotated[
@@ -465,7 +492,13 @@ def ask(
         ),
     ] = False,
 ) -> None:
-    """Consulta lo indexado y responde con el modelo local."""
+    r"""Consulta lo indexado y responde con el modelo local.
+
+    Combina búsqueda semántica y por palabras clave, y responde solo con los fragmentos
+    recuperados, citándolos como [info]\[DOC-01][/]. Debajo muestra las fuentes y marca
+    las citadas; si no encuentra base suficiente, se abstiene en lugar de inventar. Sin
+    pregunta entra en modo interactivo ([muted]salir[/] o Ctrl+D para terminar).
+    """
     with _store() as store:
         if not store.sources():
             _fail(
@@ -484,8 +517,11 @@ def ask(
                 _answer(consultor, text, stale, ctx.obj, roots, debug=debug)
 
 
-@app.command()
-def sources(
+@app.command(
+    name="sources",
+    short_help="Administra las fuentes indexadas.",
+)
+def sources_command(
     remove: Annotated[
         list[str] | None,
         typer.Option(
@@ -515,7 +551,13 @@ def sources(
         ),
     ] = None,
 ) -> None:
-    """Lista las fuentes indexadas (y opcionalmente elimina o recoloca alguna)."""
+    """Administra las fuentes indexadas.
+
+    Sin opciones, lista cada fuente con su versión indexada e instalada, fragmentos y
+    estado (al día, obsoleta o no encontrada); los módulos de la biblioteca estándar se
+    agrupan en una fila. También elimina fuentes ([info]--remove stdlib[/] las borra
+    todas) o recoloca una cuya carpeta se ha movido.
+    """
     with _store(check_model=False) as store:
         if remove is not None:
             _remove_sources(store, remove, yes=yes)
@@ -589,8 +631,11 @@ def _ollama(*args: str) -> None:
         _fail(f"`ollama {args[0]}` terminó con el código {result.returncode}.")
 
 
-@app.command()
-def setup(
+@app.command(
+    name="setup",
+    short_help="Descarga los modelos de Ollama y prepara el chat.",
+)
+def setup_command(
     stdlib: Annotated[
         bool | None,
         typer.Option(
@@ -600,7 +645,12 @@ def setup(
         ),
     ] = None,
 ) -> None:
-    """Descarga los modelos de Ollama, crea el de chat y ofrece indexar la stdlib."""
+    """Descarga los modelos de Ollama, crea el de chat y ofrece indexar la stdlib.
+
+    Requiere Ollama instalado y en ejecución. Descarga el modelo base y el de
+    embeddings si faltan, y crea el modelo de chat con el Modelfile incluido en el
+    paquete. Es idempotente: puedes repetirlo tras actualizar la herramienta.
+    """
     if shutil.which("ollama") is None:
         _fail(
             "No se encuentra el comando `ollama`.",
@@ -639,9 +689,17 @@ def _offer_stdlib(answer: bool | None) -> None:
             )
 
 
-@app.command()
-def config(ctx: typer.Context) -> None:
-    """Muestra las preferencias efectivas; ofrece crear `config.toml` si no existe."""
+@app.command(
+    name="config",
+    short_help="Muestra la configuración efectiva.",
+)
+def config_command(ctx: typer.Context) -> None:
+    """Muestra las preferencias efectivas; ofrece crear `config.toml` si no existe.
+
+    Lista cada ajuste con su valor y marca los que cambia tu [info]config.toml[/] frente
+    a los valores por defecto. Si el fichero no existe, ofrece crearlo a partir de una
+    plantilla comentada.
+    """
     current = cast(UserConfig, ctx.obj)
     path = config_path()
     show_user_config(
@@ -651,13 +709,22 @@ def config(ctx: typer.Context) -> None:
         print_hint(f"Creado {create(path)}. Edítalo y vuelve a ejecutar el comando.")
 
 
-@app.command()
-def update(
+@app.command(
+    name="update",
+    short_help="Reindexa los paquetes cuya versión instalada difiere de la indexada.",
+)
+def update_command(
     yes: Annotated[
         bool, typer.Option("--yes", "-y", help="Reindexar sin pedir confirmación.")
     ] = False,
 ) -> None:
-    """Reindexa los paquetes cuya versión instalada difiere de la indexada."""
+    """Reindexa los paquetes cuya versión instalada difiere de la indexada.
+
+    Compara cada fuente con la versión instalada en el entorno donde se indexó (el de
+    la herramienta o el de [info]--python[/]) y, tras confirmar, reindexa las
+    obsoletas. La documentación local no se comprueba: reindéxala con
+    [info]api index-docs[/].
+    """
     with _store() as store:
         stale = [s for s in check_versions(store.sources()) if s.is_stale]
         if not stale:
@@ -679,7 +746,10 @@ def update(
     show_sources_table(results, "Reindexado")
 
 
-@app.command("eval")
+@app.command(
+    name="eval",
+    short_help="Mide Recall@k y MRR de la recuperación con casos de referencia.",
+)
 def eval_command(
     cases: Annotated[
         Path,
@@ -701,7 +771,13 @@ def eval_command(
         ),
     ] = False,
 ) -> None:
-    """Mide Recall@k y MRR de la recuperación con casos de referencia."""
+    r"""Mide Recall@k y MRR de la recuperación con casos de referencia.
+
+    Lee preguntas con sus fuentes esperadas de un TOML ([muted]\[\[case]][/] con
+    question y expected) y comprueba si la recuperación las encuentra entre los
+    primeros resultados, sin llamar al modelo de chat. Por defecto solo muestra los
+    casos que fallan.
+    """
     try:
         loaded = load_cases(cases)
     except ValueError as exc:

@@ -212,3 +212,11 @@ def test_style_typer_help_is_idempotent() -> None:
     render.style_typer_help()
     render.style_typer_help()
     assert rich_utils._get_rich_console is render._themed_console
+
+
+def test_typer_help_paragraphs_are_reflowed() -> None:
+    render.style_typer_help()
+    text = rich_utils._fix_linebreaks(
+        ["Una línea\n  partida.", "Otro\npárrafo."], "rich"
+    )
+    assert text == "Una línea partida.\n\nOtro párrafo."

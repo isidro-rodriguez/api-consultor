@@ -11,6 +11,10 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 - Los textos de ayuda de Typer (`help=` de opciones y argumentos) admiten el markup
   semántico del tema (`[info]`, `[muted]`, `[warning]`…).
+- El `--help` de cada comando muestra un párrafo con más detalle; el listado de
+  `api --help` mantiene una línea por comando.
+- La ayuda y los avisos de uso de Typer salen en español (uso, paneles, `--help`,
+  valores por defecto, obligatorio).
 
 ## [0.2.0] - 2026-10-21
 

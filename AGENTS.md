@@ -53,7 +53,9 @@ Nada imprime fuera de `render.py`. `src/api_consultor/Modelfile` (empaquetado) d
   con `frozen=True, slots=True` para datos; textos de usuario en español.
 - Docstrings estilo Google (`Args:`, `Returns:`, `Raises:`, `Yields:`, `Attributes:`) en
   todo lo público, constantes incluidas (cadena justo tras la asignación); ruff (`D`) lo
-  exige. Los comandos Typer llevan una sola línea: es su texto de `--help`.
+  exige. Los comandos Typer llevan `name=` y `short_help=` (una línea, la del listado
+  de `api --help`); su función se llama `*_command` y su docstring es una línea más un
+  párrafo, sin secciones Google, que es el texto de su `--help`.
 - Dependencias nuevas solo si están justificadas; añádelas con `uv add` (runtime) o
   `uv add --dev` (desarrollo). `uv.lock` se versiona.
 - Commits convencionales (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`).
