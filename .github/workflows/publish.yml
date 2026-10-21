@@ -22,8 +22,8 @@ jobs:
     permissions:
       id-token: write # publicación de confianza (OIDC): sin tokens guardados
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
       - name: La etiqueta coincide con la versión del proyecto
         run: |
           version="$(uv version --short)"
