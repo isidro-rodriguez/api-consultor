@@ -34,7 +34,7 @@ declares terminada una tarea que no hayas ejecutado.
 | `store.py`      | SQLite + `sqlite-vec` + FTS5 + metadatos (`meta`, `sources`); valida modelo y dimensión.        |
 | `consultor.py`  | RAG: `retrieve()` (nombres + FTS5 + vectorial, fusión RRF) y `stream()`.                        |
 | `versions.py`   | Versión instalada (distribución ≠ módulo) y estado de cada fuente indexada.                     |
-| `userconfig.py` | `config.toml` del usuario (editor, plantilla de enlaces) y enlaces a ficheros.                  |
+| `userconfig.py` | `config.toml` del usuario (sobrescribe `Settings`, plantilla de enlaces) y `api config`.        |
 | `evaluation.py` | Recall@k, MRR y carga de casos de `api eval`.                                                   |
 | `llm.py`        | Capa fina sobre el cliente de Ollama (`embed`, `stream_chat`).                                  |
 | `render.py`     | Toda la salida de consola: tema Monokai, Markdown, tablas, versión.                             |
@@ -117,7 +117,7 @@ la recuperación.
 5. ~~Citas verificables (`[DOC-01]`)~~ (hecho: `citations.py`; el Modelfile también lo pide,
    recréalo con `ollama create`).
 6. ~~Sources: flag de eliminar fuente~~ (hecho: `api sources --remove`).
-7. ~~Fuentes como hiperenlaces y `api open`~~ (hecho: `userconfig.py`, chunks con `path`/`line`,
+7. ~~Fuentes como hiperenlaces (Ctrl+clic) y `config.toml`~~ (hecho: `userconfig.py`, chunks con `path`/`line`,
    formato de índice 3; hay que reindexar para obtener ubicaciones).
 8. Aplazado: símbolos sin docstring, AST/herencia/reexportaciones, reranker.
 9. Empaquetado como paquete instalable UV tool

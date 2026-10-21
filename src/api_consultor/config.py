@@ -4,8 +4,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class Settings:
+    """Valores por defecto; `config.toml` los sobrescribe al arrancar la CLI."""
+
     chat_model: str = "api-consultor"
     embed_model: str = "bge-m3"
     embed_dim: int = 1024  # dimensión de bge-m3; cámbiala si cambias de modelo

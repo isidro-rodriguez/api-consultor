@@ -3,7 +3,6 @@
 import logging
 import platform
 import sqlite3
-import subprocess
 from collections.abc import Callable, Generator, Iterator, Sequence
 from contextlib import contextmanager
 from functools import partial
@@ -48,7 +47,8 @@ from .userconfig import (
     UserConfigError,
     chunk_link,
     config_path,
-    editor_command,
+    create,
+    effective,
     load,
 )
 from .versions import check_versions
@@ -74,14 +74,26 @@ def _version_details() -> list[tuple[str, str]]:
     ]
 
 
+def _load_config() -> UserConfig:
+    """Lee `config.toml` y lo aplica a `SETTINGS`; falla con claridad si es inválido."""
+    try:
+        user = load()
+    except UserConfigError as exc:
+        _fail(str(exc), exc.hint)
+    user.apply(SETTINGS)
+    return user
+
+
 def _version_callback(value: bool) -> None:
     if value:
+        _load_config()
         show_version(__version__, _version_details())
         raise typer.Exit
 
 
 @app.callback()
 def _setup(
+    ctx: typer.Context,
     version: Annotated[
         bool,
         typer.Option(
@@ -93,6 +105,7 @@ def _setup(
         ),
     ] = False,
 ) -> None:
+    ctx.obj = _load_config()
     # Avisos de logging (p. ej. módulos que no se pueden importar) con estilo Rich.
     logging.basicConfig(
         level=logging.WARNING,
@@ -209,14 +222,15 @@ def index(
 @app.command("index-docs")
 def index_docs(
     directory: Annotated[
-        Path,
+        Path | None,
         typer.Argument(
             metavar="DIRECTORIO",
             exists=True,
             file_okay=False,
-            help="Carpeta con .txt, .md, .rst o .zip.",
+            help="Carpeta con .txt, .md, .rst o .zip (por defecto, la configurada).",
+            show_default=False,
         ),
-    ] = SETTINGS.docs_dir,
+    ] = None,
     exclude: Annotated[
         list[str] | None,
         typer.Option(
@@ -228,6 +242,9 @@ def index_docs(
     ] = None,
 ) -> None:
     """Indexa documentación local (.txt, .md, .rst; sueltos, en carpetas o en .zip)."""
+    directory = directory or SETTINGS.docs_dir
+    if not directory.is_dir():
+        _fail(f"No existe la carpeta de documentación: {directory}.")
     results: list[SourceInfo] = []
     with _store() as store, progress_bar() as progress, _handled_errors():
         for source, files in collect(directory).items():
@@ -270,9 +287,13 @@ def _warn_stale(store: Store) -> frozenset[str]:
 
 
 def _answer(
-    consultor: Consultor, question: str, stale: frozenset[str], *, debug: bool = False
+    consultor: Consultor,
+    question: str,
+    stale: frozenset[str],
+    config: UserConfig,
+    *,
+    debug: bool = False,
 ) -> None:
-    config = load()  # falla antes de generar si config.toml es inválido
     with status("Buscando en la documentación..."):
         retrieval = consultor.search(question)
     if debug:
@@ -293,6 +314,7 @@ def _answer(
 
 @app.command()
 def ask(
+    ctx: typer.Context,
     question: Annotated[
         str | None,
         typer.Argument(
@@ -321,7 +343,7 @@ def ask(
         )
         with _handled_errors():
             for text in questions:
-                _answer(consultor, text, stale, debug=debug)
+                _answer(consultor, text, stale, ctx.obj, debug=debug)
 
 
 @app.command()
@@ -376,54 +398,17 @@ def _remove_sources(store: Store, names: list[str], *, yes: bool) -> None:
         print_hint(f"Eliminada {name}: {store.remove(name)} fragmentos.")
 
 
-@app.command("open")
-def open_command(
-    name: Annotated[
-        str, typer.Argument(metavar="NOMBRE", help="Símbolo o documento indexado.")
-    ],
-) -> None:
-    """Abre en tu editor el fichero (y la línea) de un símbolo o documento indexado."""
-    with _handled_errors():
-        config = load()
-        with _store(check_model=False) as store:
-            matches = store.by_name([name], limit_per_name=6) or store.by_short_name(
-                [name]
-            )
-        chunk = _pick(name, matches)
-        command = editor_command(config, chunk)
-    print_hint(f"Abriendo {chunk.path}:{chunk.line}")
-    try:
-        subprocess.run(command, check=False)
-    except OSError as exc:
-        _fail(
-            f"No se pudo ejecutar el editor `{command[0]}`: {exc.strerror or exc}.",
-            f"Configúralo en {config_path()} con `api config`.",
-        )
-
-
-def _pick(name: str, matches: list[Chunk]) -> Chunk:
-    """Elige el fragmento a abrir o explica por qué no se puede."""
-    if not matches:
-        _fail(f"No hay nada indexado llamado `{name}`.", "Revisa `api sources`.")
-    exact = [c for c in matches if c.qualname == name]
-    if len(exact) != 1 and len({c.qualname for c in matches}) > 1:
-        options = ", ".join(sorted({c.qualname for c in matches}))
-        _fail(f"`{name}` es ambiguo.", f"Indica el nombre completo: {options}.")
-    chunk = (exact or matches)[0]
-    if not chunk.path:
-        _fail(
-            f"`{chunk.qualname}` no tiene fichero asociado.",
-            "Viene de un .zip o se indexó antes de esta versión: reindéxalo.",
-        )
-    return chunk
-
-
 @app.command()
-def config() -> None:
-    """Muestra dónde está `config.toml` y qué editor y enlaces se usan."""
-    with _handled_errors():
-        current: UserConfig = load()
-    show_user_config(current, config_path())
+def config(ctx: typer.Context) -> None:
+    """Muestra las preferencias efectivas; ofrece crear `config.toml` si no existe."""
+    current = ctx.obj
+    assert isinstance(current, UserConfig)
+    path = config_path()
+    show_user_config(
+        effective(current, SETTINGS), path, exists=current.source is not None
+    )
+    if current.source is None and typer.confirm(f"¿Crear {path} con la plantilla?"):
+        print_hint(f"Creado {create(path)}. Edítalo y vuelve a ejecutar el comando.")
 
 
 @app.command()

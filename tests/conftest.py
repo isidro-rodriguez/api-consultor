@@ -1,5 +1,6 @@
 """Fixtures comunes: aislamiento del sistema de ficheros y Ollama simulado."""
 
+import dataclasses
 import hashlib
 import importlib
 import math
@@ -10,6 +11,8 @@ from collections.abc import Callable, Generator, Iterator, Sequence
 from pathlib import Path
 
 import pytest
+
+from api_consultor.config import SETTINGS
 
 EMBED_DIM = 1024  # coincide con Settings.embed_dim (bge-m3)
 
@@ -48,6 +51,15 @@ def isolated_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Cada test corre en un directorio temporal: nunca toca data/ ni docs/ reales."""
     monkeypatch.chdir(tmp_path)
     return tmp_path
+
+
+@pytest.fixture(autouse=True)
+def restore_settings() -> Generator[None]:
+    """`config.toml` modifica `SETTINGS` al arrancar la CLI: se restaura al acabar."""
+    snapshot = dataclasses.replace(SETTINGS)
+    yield
+    for item in dataclasses.fields(snapshot):
+        setattr(SETTINGS, item.name, getattr(snapshot, item.name))
 
 
 @pytest.fixture(autouse=True)

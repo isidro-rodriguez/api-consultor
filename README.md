@@ -82,31 +82,40 @@ no está en el índice, `api eval` lo avisa: ese caso no puede acertar. Úsalo a
 después de cada cambio en la recuperación o el chunking. Ejecútalo con Ollama en
 marcha: usa el índice real.
 
-## Editor y enlaces
+## Configuración
 
-El panel «Fuentes» enlaza cada fragmento con su fichero (hiperenlace de terminal, si tu
-terminal lo admite) y `api open NOMBRE` lo abre en tu editor, en la línea del símbolo o
-sección. Los chunks de un `.zip` no tienen fichero. Tras actualizar, reindexa para
-guardar las ubicaciones.
-
-Editor por defecto: Windows `edit`, Linux `nano`, macOS TextEdit (`open -t`). Cámbialo en
-`config.toml` (`api config` muestra su ruta y los valores efectivos):
+Los valores por defecto están en `src/api_consultor/config.py`; los tuyos van en un
+`config.toml` opcional que sobrescribe solo lo que indiques. `api config` muestra los
+valores efectivos (y cuáles son tuyos) y, si el fichero no existe, ofrece crearlo con
+una plantilla comentada.
 
 ```toml
-[editor]
-command = ["code", "--goto", "{file}:{line}"]   # lista; campos {file} {path} {uri} {line}
-link = "vscode://file/{path}:{line}"            # por defecto "{uri}" (file://...)
+[models]      # chat, embed, embed_dim
+[paths]       # db, docs
+[retrieval]   # k, candidates, max_per_symbol, max_distance (sin definir = desactivado)
+[display]     # width
+[links]       # url
 ```
 
 Ruta: `%APPDATA%\api-consultor` (Windows), `~/.config/api-consultor` (Linux, o
-`$XDG_CONFIG_HOME`), `~/Library/Application Support/api-consultor` (macOS).
+`$XDG_CONFIG_HOME`), `~/Library/Application Support/api-consultor` (macOS). Un fichero
+inválido se rechaza con un mensaje claro antes de ejecutar nada. El prompt y los
+parámetros del modelo siguen en `Modelfile`.
 
-## Configuración
+### Enlaces a las fuentes
 
-Modelos, ruta de la base, fragmentos enviados al modelo (`retrieval_k`), candidatos
-por método (`retrieval_candidates`), máximo de fragmentos por símbolo (`max_per_symbol`),
-umbral de relevancia (`max_distance`, desactivado por defecto) y ancho de consola están en
-`src/api_consultor/config.py`. Los parámetros y el prompt del modelo, en `Modelfile`.
+El panel «Fuentes» enlaza cada fragmento con su fichero (hiperenlace de terminal: en la
+mayoría de terminales, Ctrl+clic). Se abre con la aplicación que tu sistema asocie al
+tipo de fichero; para usar un editor concreto define `[links] url`, con los campos
+`{file}`, `{path}`, `{uri}` (por defecto) y `{line}`:
+
+```toml
+[links]
+url = "vscode://file/{path}:{line}"
+```
+
+Los fragmentos de un `.zip` no tienen fichero. Tras actualizar, reindexa para guardar
+las ubicaciones.
 
 ## Desarrollo
 

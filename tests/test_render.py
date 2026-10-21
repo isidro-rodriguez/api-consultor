@@ -8,7 +8,6 @@ from rich.console import Console
 from api_consultor import render
 from api_consultor.citations import Citations
 from api_consultor.store import Chunk, SourceInfo
-from api_consultor.userconfig import UserConfig
 
 type Capture = Callable[[int], StringIO]
 
@@ -153,11 +152,21 @@ def test_show_sources_links_names_when_a_link_is_given(
     text = buffer.getvalue()
     assert text.count("\x1b]8;id=") == 1  # solo el fragmento con ubicación
     assert "file:///p/a.py" in text
+    assert "Ctrl+clic" in text
 
 
-def test_show_user_config_lists_effective_values(capture: Capture) -> None:
+def test_show_sources_without_links_has_no_hint(capture: Capture) -> None:
     buffer = capture(100)
-    render.show_user_config(UserConfig(("nano", "{file}")), Path("/x/config.toml"))
+    render.show_sources([Chunk("a.f", "a", "1", "x")])
+    assert "Ctrl+clic" not in buffer.getvalue()
+
+
+def test_show_user_config_marks_custom_values(capture: Capture) -> None:
+    buffer = capture(100)
+    rows = [("retrieval.k", "3", True), ("display.width", "90", False)]
+    render.show_user_config(rows, Path("/x/config.toml"), exists=False)
     text = buffer.getvalue()
-    assert "nano {file}" in text
-    assert "(no existe)" in text
+    assert "retrieval.k" in text
+    assert "config.toml" in text
+    assert "por defecto" in text
+    assert "Fichero: /x/config.toml (no existe)" in text

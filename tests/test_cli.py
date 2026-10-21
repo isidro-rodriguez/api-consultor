@@ -306,121 +306,83 @@ def test_sources_remove_unknown_changes_nothing(indexed: StubOllama) -> None:
     assert "mis-notas" in runner.invoke(app, ["sources"]).output
 
 
-class Launched:
-    def __init__(self) -> None:
-        self.commands: list[list[str]] = []
-
-    def run(self, command: list[str], *, check: bool) -> None:
-        assert check is False
-        self.commands.append(command)
-
-
-@pytest.fixture
-def launched(monkeypatch: pytest.MonkeyPatch) -> Launched:
-    recorder = Launched()
-    monkeypatch.setattr("api_consultor.cli.subprocess.run", recorder.run)
-    return recorder
-
-
 def write_user_config(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
 
 
-def seed(chunks: list[Chunk]) -> None:
-    vector = [1.0] + [0.0] * (SETTINGS.embed_dim - 1)
-    with Store(SETTINGS.db_path, SETTINGS.embed_dim, SETTINGS.embed_model) as store:
-        store.replace("z", chunks, [vector] * len(chunks))
+def test_open_command_no_longer_exists() -> None:
+    assert runner.invoke(app, ["open", "x"]).exit_code != 0
 
 
-def test_open_launches_the_configured_editor_at_the_line(
-    indexed: StubOllama, launched: Launched, isolated_user_config: Path
-) -> None:
-    write_user_config(
-        isolated_user_config, '[editor]\ncommand = ["ed", "+{line}", "{file}"]\n'
-    )
-    result = runner.invoke(app, ["open", "os.md#os.listdir"])
-    assert result.exit_code == 0, result.output
-    command = launched.commands[0]
-    assert command[:2] == ["ed", "+1"]
-    assert command[2].endswith("os.md")
-
-
-def test_open_accepts_a_short_unique_suffix(
-    indexed: StubOllama, launched: Launched
-) -> None:
-    assert runner.invoke(app, ["open", "listdir"]).exit_code == 0
-    assert len(launched.commands) == 1
-
-
-def test_open_unknown_name_fails_cleanly(
-    indexed: StubOllama, launched: Launched
-) -> None:
-    result = runner.invoke(app, ["open", "inexistente"])
-    assert result.exit_code == 1
-    assert "No hay nada indexado" in result.output
-    assert not launched.commands
-
-
-def test_open_reports_a_missing_editor(
-    indexed: StubOllama, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    def missing(*_args: object, **_kwargs: object) -> None:
-        raise FileNotFoundError(2, "No such file or directory")
-
-    monkeypatch.setattr("api_consultor.cli.subprocess.run", missing)
-    result = runner.invoke(app, ["open", "os.md#os.listdir"])
-    assert result.exit_code == 1
-    assert "No se pudo ejecutar el editor" in result.output
-    assert "api config" in result.output
-
-
-def test_open_chunks_without_a_file_are_explained(
-    stub_ollama: StubOllama, launched: Launched
-) -> None:
-    seed([Chunk("z.md#T", "z", "1", "x")])
-    result = runner.invoke(app, ["open", "z.md#T"])
-    assert result.exit_code == 1
-    assert "no tiene fichero asociado" in result.output
-    assert not launched.commands
-
-
-def test_open_ambiguous_names_list_the_options(
-    stub_ollama: StubOllama, launched: Launched
-) -> None:
-    seed(
-        [
-            Chunk("z.a.run", "z", "1", "x", "/p/a.py", 1),
-            Chunk("z.b.run", "z", "1", "y", "/p/b.py", 1),
-        ]
-    )
-    result = runner.invoke(app, ["open", "run"])
-    assert result.exit_code == 1
-    assert "ambiguo" in result.output
-    assert "z.a.run" in result.output
-    assert not launched.commands
-
-
-def test_config_shows_defaults_and_path() -> None:
-    result = runner.invoke(app, ["config"])
+def test_config_without_file_offers_to_create_it(isolated_user_config: Path) -> None:
+    result = runner.invoke(app, ["config"], input="y\n")
     assert result.exit_code == 0, result.output
     assert "(no existe)" in result.output
-    assert "{file}" in result.output
+    assert "retrieval.k" in result.output
+    assert "Creado" in result.output
+    assert "[retrieval]" in isolated_user_config.read_text(encoding="utf-8")
 
 
-def test_invalid_config_is_reported_by_open(
-    indexed: StubOllama, isolated_user_config: Path
+def test_config_declining_does_not_create_the_file(isolated_user_config: Path) -> None:
+    result = runner.invoke(app, ["config"], input="n\n")
+    assert result.exit_code == 0, result.output
+    assert not isolated_user_config.exists()
+
+
+def test_config_with_file_marks_custom_values_and_does_not_ask(
+    isolated_user_config: Path,
 ) -> None:
-    write_user_config(isolated_user_config, "[editor]\nlinks = 1\n")
-    result = runner.invoke(app, ["open", "os.md#os.listdir"])
+    write_user_config(isolated_user_config, "[retrieval]\nk = 3\n")
+    result = runner.invoke(app, ["config"])
+    assert result.exit_code == 0, result.output
+    assert "Crear" not in result.output
+    assert "config.toml" in result.output
+    assert "por defecto" in result.output
+
+
+def test_user_config_is_applied_to_the_settings(isolated_user_config: Path) -> None:
+    write_user_config(isolated_user_config, "[retrieval]\nk = 3\n")
+    assert runner.invoke(app, ["sources"]).exit_code == 0
+    assert SETTINGS.retrieval_k == 3
+
+
+def test_version_panel_uses_the_configured_models(isolated_user_config: Path) -> None:
+    write_user_config(isolated_user_config, '[models]\nchat = "mi-modelo"\n')
+    result = runner.invoke(app, ["--version"])
+    assert "mi-modelo" in result.output
+
+
+def test_index_docs_uses_the_configured_docs_folder(
+    isolated_user_config: Path, stub_ollama: StubOllama, isolated_cwd: Path
+) -> None:
+    folder = isolated_cwd / "otras" / "notas"
+    folder.mkdir(parents=True)
+    (folder / "a.md").write_text("# Tema\n\ncuerpo\n", encoding="utf-8")
+    write_user_config(isolated_user_config, '[paths]\ndocs = "otras"\n')
+    result = runner.invoke(app, ["index-docs"])
+    assert result.exit_code == 0, result.output
+    assert "notas" in runner.invoke(app, ["sources"]).output
+
+
+def test_index_docs_reports_a_missing_folder(stub_ollama: StubOllama) -> None:
+    result = runner.invoke(app, ["index-docs"])
     assert result.exit_code == 1
-    assert "claves desconocidas" in result.output
+    assert "No existe la carpeta" in result.output
 
 
-def test_ask_reports_an_invalid_config(
-    indexed: StubOllama, isolated_user_config: Path
-) -> None:
-    write_user_config(isolated_user_config, "[editor]\nlinks = 1\n")
+def test_ask_shows_the_hint_for_clickable_sources(indexed: StubOllama) -> None:
     result = runner.invoke(app, ["ask", "os.listdir"])
+    assert result.exit_code == 0, result.output
+    assert "Ctrl+clic" in result.output
+
+
+@pytest.mark.parametrize("command", [["ask", "os.listdir"], ["config"], ["sources"]])
+def test_invalid_config_is_reported_by_every_command(
+    indexed: StubOllama, isolated_user_config: Path, command: list[str]
+) -> None:
+    write_user_config(isolated_user_config, "[retrieval]\nkk = 1\n")
+    result = runner.invoke(app, command)
     assert result.exit_code == 1
     assert "claves desconocidas" in result.output
+    assert not indexed.messages

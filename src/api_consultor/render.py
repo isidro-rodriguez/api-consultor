@@ -33,7 +33,6 @@ from .config import SETTINGS
 from .consultor import Retrieval
 from .evaluation import EvalReport
 from .store import Chunk, SourceInfo
-from .userconfig import UserConfig
 from .versions import VersionStatus
 
 # Paleta Monokai
@@ -209,6 +208,7 @@ def show_sources(
     if not chunks:
         return
     cited = set(citations.valid) if citations else set()
+    linked = False
     grid = Table.grid(padding=(0, 2))
     grid.add_column(no_wrap=True)
     grid.add_column(style="info", overflow="fold")
@@ -225,12 +225,16 @@ def show_sources(
         name = Text(chunk.qualname)
         url = link(chunk) if link is not None else None
         if url is not None:
-            name.stylize(Style(link=url, underline=True))
+            name.stylize(Style(link=url, underline=True), 0)
+            name.stylize("accent", 0)
+            linked = True
         grid.add_row(mark, name, origin)
     panel = Panel(
         grid,
         title="Fuentes",
         title_align="left",
+        subtitle="Ctrl+clic en una fuente para abrirla" if linked else None,
+        subtitle_align="right",
         border_style="muted",
         box=box.ROUNDED,
         padding=(0, 1),
@@ -504,14 +508,17 @@ def show_status_table(
     console.print(_fit(table))
 
 
-def show_user_config(config: UserConfig, path: Path) -> None:
-    """Muestra el fichero de preferencias y los valores efectivos."""
+def show_user_config(
+    rows: Sequence[tuple[str, str, bool]], path: Path, *, exists: bool
+) -> None:
+    """Preferencias efectivas; marca las que vienen de `config.toml`."""
     grid = Table.grid(padding=(0, 2))
-    grid.add_column(style="muted", justify="right")
+    grid.add_column(style="muted", no_wrap=True)
     grid.add_column(style=FG, overflow="fold")
-    grid.add_row("Fichero", f"{path}" + ("" if config.source else " (no existe)"))
-    grid.add_row("Editor", " ".join(config.command))
-    grid.add_row("Enlace", config.link)
+    grid.add_column(style="muted", no_wrap=True)
+    for name, value, custom in rows:
+        grid.add_row(name, value, "config.toml" if custom else "por defecto")
+    note = "" if exists else " (no existe)"
     console.print(
         _fit(
             Panel(
@@ -524,3 +531,4 @@ def show_user_config(config: UserConfig, path: Path) -> None:
             )
         )
     )
+    console.print(Text(f"Fichero: {path}{note}", style="muted"), soft_wrap=True)

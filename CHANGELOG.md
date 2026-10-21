@@ -11,11 +11,12 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 - `api sources --remove FUENTE` (`-r`, repetible, `-y` sin confirmar): elimina fuentes del
   índice; si alguna no existe, no borra nada.
-- Enlaces al editor: los chunks guardan fichero y línea (formato de índice 3, migración
-  automática; reindexa para obtener ubicaciones). El panel «Fuentes» enlaza cada fuente.
-- `api open NOMBRE` abre el símbolo o documento en el editor; `api config` muestra las
-  preferencias. `config.toml` en el directorio de configuración del usuario (editor por
-  defecto: `edit` en Windows, `nano` en Linux, TextEdit en macOS).
+- Enlaces a ficheros: los chunks guardan fichero y línea (formato de índice 3, migración
+  automática; reindexa para obtener ubicaciones). El panel «Fuentes» enlaza cada fuente
+  (Ctrl+clic) y lo indica con una pista.
+- `config.toml` en el directorio de configuración del usuario: modelos, rutas, parámetros
+  de recuperación, ancho y plantilla de enlace. `api config` muestra los valores efectivos
+  y ofrece crear el fichero si no existe.
 - Citas verificables: cada fragmento llega al modelo con un id (`DOC-01`), se le pide
   citarlos y `ask` comprueba la respuesta. El panel «Fuentes» muestra los ids, marca
   con ✔ los citados y avisa de citas inexistentes o de respuestas sin citas.
