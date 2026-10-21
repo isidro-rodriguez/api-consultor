@@ -135,9 +135,6 @@ logs/
 *.bak
 *.tmp
 
-# ─── Directorios privados ────────────────────────────────────
-docs/
-
 # ─── Parches entregados por los agentes ──────────────────────
 *.patch
 

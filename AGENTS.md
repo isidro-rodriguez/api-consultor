@@ -93,8 +93,9 @@ Nada imprime fuera de `render.py`. `src/api_consultor/Modelfile` (empaquetado) d
 - **No leas, abras ni consultes la base real** (carpeta de datos del usuario; ver
   `api config`). Valida con bases temporales y
   datos sintéticos.
-- No borres, reconstruyas ni reindexes el índice real. No toques `docs/` (material del
-  usuario, ignorado por git).
+- No borres, reconstruyas ni reindexes el índice real ni la documentación del usuario
+  (carpeta de datos). `docs/` del repositorio es documentación del proyecto: mantenla al
+  día con los cambios visibles para el usuario.
 - No ejecutes `git push --force`, `git reset --hard` ni reescribas historial sin pedirlo.
 
 ## Hardware objetivo

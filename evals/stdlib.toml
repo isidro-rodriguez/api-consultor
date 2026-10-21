@@ -2,7 +2,7 @@
 #
 # Requisito (basta con una de las dos fuentes, cada caso acepta ambas):
 #   - API:   uv run api index json pathlib asyncio shutil subprocess collections re
-#   - Docs:  zip de texto de docs.python.org en docs/  ->  uv run api index-docs
+#   - Docs:  zip de texto de docs.python.org en la carpeta de docs (`api config`)  ->  api index-docs
 # Uso:        uv run api eval evals/stdlib.toml            (-v para ver todos los casos)
 #
 # `expected` admite nombres exactos, patrones con `*` y alternativas con `|`:

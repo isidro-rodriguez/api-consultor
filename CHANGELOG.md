@@ -7,6 +7,11 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Cambiado
+
+- README reducido a instalación (desde PyPI), uso, configuración y desarrollo; el
+  detalle pasa a `docs/` (uso, configuración, funcionamiento, evaluación y desarrollo).
+
 ### Corregido
 
 - `api index --python` fallaba con «La sonda no respondió correctamente (sin
