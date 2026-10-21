@@ -43,6 +43,25 @@ category = "cualificado-parcial"
 question = "¿Cómo se usa Counter.most_common?"
 expected = ["collections.Counter.most_common|library/collections.txt#*"]
 
+# --- Atributos y métodos heredados -------------------------------------------------
+# `suffix` vive en una base privada de pathlib (PurePathBase en 3.13) y `name`/`joinpath`
+# en PurePath: Path los hereda. Miden que lo heredado sigue siendo encontrable.
+
+[[case]]
+category = "atributos"
+question = "¿Qué devuelve la propiedad Path.suffix?"
+expected = ["pathlib.PurePath.suffix|pathlib.Path.suffix|library/pathlib.txt#*"]
+
+[[case]]
+category = "atributos"
+question = "¿Cómo obtengo solo el nombre del fichero de un Path?"
+expected = ["pathlib.PurePath.name|pathlib.Path.name|library/pathlib.txt#*"]
+
+[[case]]
+category = "heredados"
+question = "¿Para qué sirve Path.joinpath?"
+expected = ["pathlib.PurePath.joinpath|pathlib.Path.joinpath|library/pathlib.txt#*"]
+
 # --- Solo el nombre corto ----------------------------------------------------------
 
 [[case]]

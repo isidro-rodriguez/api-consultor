@@ -27,6 +27,12 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Añadido
 
+- `api index` también indexa las propiedades (`property` y `cached_property`) con
+  docstring, con su fichero y línea.
+- Los miembros heredados de clases base *privadas* del mismo paquete (p. ej.
+  `pathlib.PurePath.suffix`, definido en `pathlib._abc.PurePathBase`) se indexan en la
+  primera clase pública que los hereda. Los heredados de bases públicas no se duplican.
+- Casos de `evals/stdlib.toml` sobre atributos y métodos heredados (`Path.suffix`…).
 - Los `.zip` de documentación se extraen a `docs-cache/` (junto a la base) al indexar, así sus
   fragmentos también tienen enlace; `api sources --remove` borra la extracción.
 - `api sources --remove FUENTE` (`-r`, repetible, `-y` sin confirmar): elimina fuentes del

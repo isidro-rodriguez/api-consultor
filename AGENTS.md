@@ -123,7 +123,8 @@ la recuperación.
 6. ~~Sources: flag de eliminar fuente~~ (hecho: `api sources --remove`).
 7. ~~Fuentes como hiperenlaces (Ctrl+clic) y `config.toml`~~ (hecho: `userconfig.py`, chunks con `path`/`line`,
    formato de índice 3; hay que reindexar para obtener ubicaciones).
-8. Aplazado: símbolos sin docstring, AST/herencia/reexportaciones, reranker.
+8. Aplazado: símbolos sin docstring, AST/reexportaciones, reranker. Hecho: propiedades y
+   miembros heredados de bases privadas (los de bases públicas no se duplican).
 9. Empaquetado como paquete instalable UV tool
    - Almacenaje de configuración persistente en directorio correspondiente (si se considera útil)
    - Almacenaje de la base de datos en dicho directorio

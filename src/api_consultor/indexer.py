@@ -6,7 +6,8 @@ import importlib.metadata
 import inspect
 import logging
 import pkgutil
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator
+from functools import cached_property
 from pathlib import Path
 from types import ModuleType
 
@@ -74,6 +75,9 @@ def _location(obj: object) -> tuple[str, int]:
     with contextlib.suppress(TypeError, OSError):
         if inspect.ismodule(obj):
             file, line = inspect.getsourcefile(obj), 1
+        elif isinstance(obj, property | cached_property):
+            getter = obj.fget if isinstance(obj, property) else obj.func
+            return _location(getter) if getter is not None else ("", 0)
         elif inspect.isfunction(obj) or inspect.isclass(obj):
             file, line = inspect.getsourcefile(obj), inspect.getsourcelines(obj)[1]
         else:
@@ -86,6 +90,8 @@ def _location(obj: object) -> tuple[str, int]:
 def _header(qualname: str, obj: object) -> str:
     if inspect.ismodule(obj):
         return f"module {qualname}"
+    if isinstance(obj, property | cached_property):
+        return f"property {qualname}"
     kind = "class" if inspect.isclass(obj) else "def"
     signature = "(...)"
     if callable(obj):
@@ -124,19 +130,48 @@ def _public_members(module: ModuleType, package: str) -> Iterator[tuple[str, obj
             yield name, obj
 
 
-def _public_methods(cls: type) -> Iterator[tuple[str, object]]:
-    for name, member in vars(cls).items():
-        if name.startswith("_"):
+def _public_methods(
+    cls: type, package: str, public: Collection[int]
+) -> Iterator[tuple[str, object]]:
+    """Métodos y propiedades públicos de `cls`.
+
+    Incluye los definidos en `cls` y los heredados de clases base *privadas* del mismo
+    paquete (las que el usuario no ve, como `pathlib._abc.PurePathBase`); los de las
+    bases públicas se indexan en ellas. Gana la definición más cercana en el MRO.
+
+    Args:
+        cls: Clase pública.
+        package: Paquete que se indexa; las bases de otros paquetes se ignoran.
+        public: `id` de todas las clases públicas del paquete.
+
+    Yields:
+        Pares (nombre, objeto).
+    """
+    names: set[str] = set()
+    for klass in cls.__mro__:
+        if klass is not cls and (
+            id(klass) in public
+            or (getattr(klass, "__module__", "") or "").split(".")[0] != package
+        ):
             continue
-        if isinstance(member, classmethod | staticmethod):
-            member = member.__func__
-        func = member
-        if inspect.isfunction(func):
-            yield name, func
+        for name, member in vars(klass).items():
+            if name.startswith("_") or name in names:
+                continue
+            names.add(name)
+            if isinstance(member, classmethod | staticmethod):
+                member = member.__func__
+            if inspect.isfunction(member) or isinstance(
+                member, property | cached_property
+            ):
+                yield name, member
 
 
 def extract_chunks(package: str) -> list[Chunk]:
-    """Devuelve chunks de cada módulo, función, clase y método público con docstring.
+    """Devuelve chunks de cada módulo, función, clase, método y propiedad públicos.
+
+    Solo cuentan los que tienen docstring. Los métodos heredados se indexan en la clase
+    que los define; si esa clase es privada (p. ej. `pathlib._abc.PurePathBase`), en la
+    primera clase pública que los hereda.
 
     Un docstring largo se reparte en varios chunks por secciones y párrafos; ninguno
     pierde texto (`MAX_CHARS` es un límite de tamaño, no un truncado).
@@ -175,12 +210,22 @@ def extract_chunks(package: str) -> list[Chunk]:
                 text = f"{header} (continuación {number})\n\n{part}"
             chunks.append(Chunk(label, package, version, text, path, line))
 
-    for module in _walk_modules(package):
+    loaded = [
+        (module, list(_public_members(module, package)))
+        for module in _walk_modules(package)
+    ]
+    public = {
+        id(obj)
+        for _module, found in loaded
+        for _name, obj in found
+        if inspect.isclass(obj)
+    }
+    for module, found in loaded:
         add(module.__name__, module)
-        for name, obj in _public_members(module, package):
+        for name, obj in found:
             qualname = f"{module.__name__}.{name}"
             add(qualname, obj)  # raíz primero: gana el alias público
             if inspect.isclass(obj):
-                for method_name, method in _public_methods(obj):
+                for method_name, method in _public_methods(obj, package, public):
                     add(f"{qualname}.{method_name}", method)
     return chunks
