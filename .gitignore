@@ -138,6 +138,9 @@ logs/
 # ─── Directorios privados ────────────────────────────────────
 docs/
 
+# ─── Parches entregados por los agentes ──────────────────────
+*.patch
+
 # ─── Agentes ─────────────────────────────────────────────────
 .kilo/
 

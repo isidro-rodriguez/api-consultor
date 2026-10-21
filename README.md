@@ -49,15 +49,18 @@ uv run api --version
   (`uv add --dev <paquete>`).
 - `docs/` admite, por ejemplo, el zip de texto de la documentación de Python
   (<https://docs.python.org/3/download.html>). Está ignorado por git.
-- La base de datos vive en `data/consultor.db` (también ignorada).
+- La base de datos vive en la carpeta de datos del usuario (`api config` muestra su ruta),
+  no en el proyecto: `%LOCALAPPDATA%\\api-consultor` (Windows), `~/.local/share/api-consultor`
+  (Linux) o `~/Library/Application Support/api-consultor` (macOS). Cámbiala con
+  `[paths] db` en `config.toml`.
 
 ## Integridad del índice
 
-El índice (`data/consultor.db`) registra el modelo y la dimensión de los embeddings, el
+El índice registra el modelo y la dimensión de los embeddings, el
 formato y, por fuente, su tipo, versión y fecha de indexado.
 
 - Si cambias `embed_model` o `embed_dim`, la CLI se niega a insertar o consultar vectores
-  incompatibles y explica cómo reconstruir el índice (borrar `data/consultor.db`).
+  incompatibles y explica cómo reconstruir el índice (borrar el fichero de la base).
 - Las respuestas citan los fragmentos como `[DOC-01]`; el panel «Fuentes» marca los
   citados con ✔ y avisa si el modelo cita ids inexistentes o no cita nada. Tras
   actualizar el `Modelfile`, recrea el modelo: `ollama create api-consultor -f Modelfile`.
@@ -114,8 +117,9 @@ tipo de fichero; para usar un editor concreto define `[links] url`, con los camp
 url = "vscode://file/{path}:{line}"
 ```
 
-Los fragmentos de un `.zip` no tienen fichero. Tras actualizar, reindexa para guardar
-las ubicaciones.
+Los `.zip` de documentación se extraen (solo los textos) a `docs-cache/`, junto a la base
+de datos, para que sus fragmentos también tengan fichero; `api sources --remove` borra
+esa extracción. Tras actualizar, reindexa para guardar las ubicaciones.
 
 ## Desarrollo
 
@@ -129,7 +133,7 @@ uv run pytest
 
 - **pre-commit:** higiene de ficheros, `uv.lock` al día, `ruff` y `ty`.
 - **pre-push:** `ruff`, `ty` y `pytest` (cobertura mínima del 90 %).
-- Los tests no usan Ollama ni tocan `data/` o `docs/`.
+- Los tests no usan Ollama ni tocan el índice o `docs/` reales.
 - Versionado SemVer, commits convencionales y cambios en [CHANGELOG.md](CHANGELOG.md).
   Guía para agentes de código en [AGENTS.md](AGENTS.md).
 

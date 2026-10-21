@@ -2,6 +2,7 @@
 
 import logging
 import platform
+import shutil
 import sqlite3
 from collections.abc import Callable, Generator, Iterator, Sequence
 from contextlib import contextmanager
@@ -19,7 +20,7 @@ from . import __version__
 from .citations import check_citations
 from .config import SETTINGS
 from .consultor import Consultor, format_context
-from .docs import collect, extract_doc_chunks, origin
+from .docs import Files, collect, extract_doc_chunks, materialize
 from .evaluation import DEFAULT_KS, evaluate, load_cases, missing_sources
 from .indexer import extract_chunks
 from .llm import embed
@@ -219,6 +220,18 @@ def index(
     show_sources_table(results, "Indexado")
 
 
+def _docs_cache() -> Path:
+    """Donde se extraen los .zip de documentación para poder enlazarlos."""
+    return SETTINGS.db_path.parent / "docs-cache"
+
+
+def _doc_chunks(
+    directory: Path, source: str, files: Files, exclude: Sequence[str]
+) -> list[Chunk]:
+    root = materialize(directory, source, _docs_cache(), exclude)
+    return extract_doc_chunks(source, files, exclude, root)
+
+
 @app.command("index-docs")
 def index_docs(
     directory: Annotated[
@@ -248,13 +261,7 @@ def index_docs(
     results: list[SourceInfo] = []
     with _store() as store, progress_bar() as progress, _handled_errors():
         for source, files in collect(directory).items():
-            build = partial(
-                extract_doc_chunks,
-                source,
-                files,
-                exclude or (),
-                origin(directory, source),
-            )
+            build = partial(_doc_chunks, directory, source, files, exclude or ())
             if info := _index_source(store, progress, source, build, "docs"):
                 results.append(info)
     show_sources_table(results, "Indexado")
@@ -395,7 +402,9 @@ def _remove_sources(store: Store, names: list[str], *, yes: bool) -> None:
     ):
         raise typer.Exit(code=1)
     for name in dict.fromkeys(names):
-        print_hint(f"Eliminada {name}: {store.remove(name)} fragmentos.")
+        removed = store.remove(name)
+        shutil.rmtree(_docs_cache() / name, ignore_errors=True)  # extracción de un .zip
+        print_hint(f"Eliminada {name}: {removed} fragmentos.")
 
 
 @app.command()

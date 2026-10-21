@@ -7,8 +7,16 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Cambiado
+
+- La base de datos se guarda por defecto en la carpeta de datos del usuario, no en
+  `data/` del proyecto. Para conservar la anterior: moverla allí o fijar
+  `[paths] db = "data/consultor.db"` en `config.toml`.
+
 ### Añadido
 
+- Los `.zip` de documentación se extraen a `docs-cache/` (junto a la base) al indexar, así sus
+  fragmentos también tienen enlace; `api sources --remove` borra la extracción.
 - `api sources --remove FUENTE` (`-r`, repetible, `-y` sin confirmar): elimina fuentes del
   índice; si alguna no existe, no borra nada.
 - Enlaces a ficheros: los chunks guardan fichero y línea (formato de índice 3, migración

@@ -1,6 +1,7 @@
 """Indexado de documentación local: .txt, .md y .rst, sueltos, en carpetas o en .zip."""
 
 import re
+import shutil
 import zipfile
 from collections import Counter
 from collections.abc import Iterator, Sequence
@@ -24,17 +25,39 @@ def _decode(data: bytes) -> str:
     return data.decode("utf-8", errors="replace")
 
 
+def _zip_members(zf: zipfile.ZipFile) -> list[tuple[str, str]]:
+    """(ruta relativa, nombre en el zip) de los textos, sin la carpeta raíz común."""
+    names = sorted(n for n in zf.namelist() if not n.endswith("/"))
+    # Quita la carpeta raíz común (p. ej. python-3.15-docs-text/).
+    roots = {n.split("/", 1)[0] for n in names}
+    strip = len(roots) == 1 and all("/" in n for n in names)
+    return [
+        (n.split("/", 1)[1] if strip else n, n)
+        for n in names
+        if Path(n).suffix.lower() in SUFFIXES
+    ]
+
+
 def _read_zip(path: Path) -> Files:
     with zipfile.ZipFile(path) as zf:
-        names = sorted(n for n in zf.namelist() if not n.endswith("/"))
-        # Quita la carpeta raíz común (p. ej. python-3.15-docs-text/).
-        roots = {n.split("/", 1)[0] for n in names}
-        strip = len(roots) == 1 and all("/" in n for n in names)
-        return [
-            (n.split("/", 1)[1] if strip else n, _decode(zf.read(n)))
-            for n in names
-            if Path(n).suffix.lower() in SUFFIXES
-        ]
+        return [(rel, _decode(zf.read(name))) for rel, name in _zip_members(zf)]
+
+
+def _extract_zip(path: Path, target: Path, exclude: Sequence[str]) -> Path:
+    """Extrae los textos del zip a `target` (sustituyendo lo anterior) y lo devuelve."""
+    shutil.rmtree(target, ignore_errors=True)
+    target.mkdir(parents=True)
+    root = target.resolve()
+    with zipfile.ZipFile(path) as zf:
+        for rel, name in _zip_members(zf):
+            if any(fnmatch(rel, pattern) for pattern in exclude):
+                continue
+            dest = (root / rel).resolve()
+            if not dest.is_relative_to(root):  # nombres con `..` o rutas absolutas
+                continue
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(zf.read(name))
+    return root
 
 
 def _read_dir(path: Path) -> Files:
@@ -66,13 +89,20 @@ def collect(docs_dir: Path) -> dict[str, Files]:
     return sources
 
 
-def origin(docs_dir: Path, source: str) -> Path | None:
-    """Carpeta que contiene los ficheros de `source` (None si viene de un .zip)."""
+def materialize(
+    docs_dir: Path, source: str, cache_dir: Path, exclude: Sequence[str] = ()
+) -> Path:
+    """Carpeta con los ficheros de `source`, para poder enlazarlos.
+
+    Una carpeta o los ficheros sueltos ya existen en disco; un `.zip` se extrae a
+    `cache_dir/source` (solo los textos no excluidos).
+    """
     folder = docs_dir / source
     if folder.is_dir():
         return folder.resolve()
-    if (docs_dir / f"{source}.zip").is_file():
-        return None
+    archive = docs_dir / f"{source}.zip"
+    if archive.is_file():
+        return _extract_zip(archive, cache_dir / source, exclude)
     return docs_dir.resolve()  # ficheros sueltos
 
 
@@ -155,7 +185,7 @@ def extract_doc_chunks(
     """Un chunk por trozo de sección; `exclude` son patrones fnmatch de ruta.
 
     Con `root` (carpeta de la fuente) los chunks recuerdan fichero y línea para poder
-    abrirlos en el editor; sin ella (p. ej. un .zip) no hay ubicación.
+    abrirlos; sin ella no hay ubicación.
     """
     found = _VERSION.search(source)
     version = found.group() if found else "desconocida"

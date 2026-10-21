@@ -5,7 +5,7 @@ from api_consultor.docs import (
     CHUNK_CHARS,
     collect,
     extract_doc_chunks,
-    origin,
+    materialize,
     sections,
     split_text,
 )
@@ -132,9 +132,50 @@ def test_doc_chunks_from_zip_have_no_location() -> None:
     assert [(c.path, c.line) for c in chunks] == [("", 0)]
 
 
-def test_origin_distinguishes_folders_zips_and_loose_files(tmp_path: Path) -> None:
+def make_zip(path: Path, members: dict[str, str]) -> None:
+    with zipfile.ZipFile(path, "w") as zf:
+        for name, text in members.items():
+            zf.writestr(name, text)
+
+
+def test_materialize_folders_and_loose_files_stay_in_place(tmp_path: Path) -> None:
     (tmp_path / "carpeta").mkdir()
-    (tmp_path / "paquete.zip").write_bytes(b"")
-    assert origin(tmp_path, "carpeta") == (tmp_path / "carpeta").resolve()
-    assert origin(tmp_path, "paquete") is None
-    assert origin(tmp_path, "docs") == tmp_path.resolve()
+    cache = tmp_path / "cache"
+    assert materialize(tmp_path, "carpeta", cache) == (tmp_path / "carpeta").resolve()
+    assert materialize(tmp_path, "docs", cache) == tmp_path.resolve()
+    assert not cache.exists()
+
+
+def test_materialize_extracts_zip_texts_without_the_common_root(
+    tmp_path: Path,
+) -> None:
+    make_zip(
+        tmp_path / "py-3.15.zip",
+        {
+            "py-3.15/library/os.txt": "T\n=\n\nx\n",
+            "py-3.15/whatsnew/3.15.txt": "N\n=\n\ny\n",
+            "py-3.15/imagen.png": "no es texto",
+        },
+    )
+    root = materialize(tmp_path, "py-3.15", tmp_path / "cache", ["whatsnew/*"])
+    assert root == (tmp_path / "cache" / "py-3.15").resolve()
+    assert sorted(
+        f.relative_to(root).as_posix() for f in root.rglob("*") if f.is_file()
+    ) == ["library/os.txt"]
+
+
+def test_materialize_replaces_a_previous_extraction(tmp_path: Path) -> None:
+    archive = tmp_path / "n.zip"
+    make_zip(archive, {"viejo.md": "# V\n\nx\n"})
+    materialize(tmp_path, "n", tmp_path / "cache")
+    make_zip(archive, {"nuevo.md": "# N\n\ny\n"})
+    root = materialize(tmp_path, "n", tmp_path / "cache")
+    assert [f.name for f in root.rglob("*") if f.is_file()] == ["nuevo.md"]
+
+
+def test_materialize_ignores_members_that_escape_the_target(tmp_path: Path) -> None:
+    make_zip(tmp_path / "n.zip", {"../fuera.md": "x", "dentro.md": "# D\n\ny\n"})
+    root = materialize(tmp_path, "n", tmp_path / "cache")
+    assert not (tmp_path / "fuera.md").exists()
+    assert not (tmp_path / "cache" / "fuera.md").exists()
+    assert [f.name for f in root.rglob("*") if f.is_file()] == ["dentro.md"]

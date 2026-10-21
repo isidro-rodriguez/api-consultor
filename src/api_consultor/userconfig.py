@@ -11,10 +11,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import quote
 
-from .config import Settings
+from .config import APP_DIR, Settings
 from .store import Chunk
 
-APP_DIR = "api-consultor"
 ENV_VAR = "API_CONSULTOR_CONFIG"  # ruta alternativa al fichero (también para tests)
 DEFAULT_LINK = "{uri}"
 LINK_FIELDS = "{file} {path} {uri} {line}"

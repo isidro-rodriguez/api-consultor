@@ -78,7 +78,8 @@ Nada imprime fuera de `render.py`. `Modelfile` define el modelo `api-consultor`.
 
 ## Datos y privacidad (reglas duras)
 
-- **No leas, abras ni consultes `data/consultor.db`.** Valida con bases temporales y
+- **No leas, abras ni consultes la base real** (carpeta de datos del usuario; ver
+  `api config`). Valida con bases temporales y
   datos sintéticos.
 - No borres, reconstruyas ni reindexes el índice real. No toques `docs/` (material del
   usuario, ignorado por git).

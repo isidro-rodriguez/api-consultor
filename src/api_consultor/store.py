@@ -131,7 +131,7 @@ class Store:
                 f"El índice guarda vectores de {found.group(1)} dimensiones y la "
                 f"configuración usa {dim}.",
                 "Restaura embed_model/embed_dim o reconstruye el índice "
-                "(borra data/consultor.db y reindexa).",
+                "(borra el fichero del índice, ruta en `api config`, y reindexa).",
             )
 
     def _check_and_record_meta(self, dim: int, model: str | None) -> None:
@@ -149,7 +149,7 @@ class Store:
                 f"El índice se creó con el modelo de embeddings '{old_model}' y la "
                 f"configuración usa '{model}'.",
                 "Restaura embed_model o reconstruye el índice "
-                "(borra data/consultor.db y reindexa).",
+                "(borra el fichero del índice, ruta en `api config`, y reindexa).",
             )
         updates = {"format_version": str(FORMAT_VERSION), "embed_dim": str(dim)}
         if model is not None:

@@ -1,4 +1,5 @@
 import platform
+import zipfile
 from pathlib import Path
 
 import ollama
@@ -136,13 +137,10 @@ def test_index_unknown_module_warns_and_continues(stub_ollama: StubOllama) -> No
     assert "json" in result.output
 
 
-DB = Path("data/consultor.db")
-
-
 def seed_json_index(version: str, model: str = "bge-m3") -> None:
     """Índice con un único paquete (`json`) indexado con la versión indicada."""
     chunks = [Chunk("json.dumps", "json", version, "def json.dumps(obj)\n\nserializa")]
-    with Store(DB, EMBED_DIM, model) as store:
+    with Store(SETTINGS.db_path, EMBED_DIM, model) as store:
         store.replace("json", chunks, fake_embed([c.content for c in chunks]))
 
 
@@ -386,3 +384,34 @@ def test_invalid_config_is_reported_by_every_command(
     assert result.exit_code == 1
     assert "claves desconocidas" in result.output
     assert not indexed.messages
+
+
+def make_docs_zip(isolated_cwd: Path) -> None:
+    folder = isolated_cwd / "docs"
+    folder.mkdir()
+    with zipfile.ZipFile(folder / "manual-1.0.zip", "w") as zf:
+        zf.writestr("manual-1.0/guia.md", "# Inicio\n\ncuerpo\n\n# Uso\n\notro\n")
+
+
+def test_index_docs_extracts_zips_so_their_chunks_have_a_file(
+    stub_ollama: StubOllama, isolated_cwd: Path
+) -> None:
+    make_docs_zip(isolated_cwd)
+    assert runner.invoke(app, ["index-docs"]).exit_code == 0
+    cache = SETTINGS.db_path.parent / "docs-cache" / "manual-1.0"
+    assert (cache / "guia.md").is_file()
+    with Store(SETTINGS.db_path, EMBED_DIM) as store:
+        chunk = store.by_name(["guia.md#Uso"])[0]
+    assert chunk.path == str((cache / "guia.md").resolve())
+    assert chunk.line == 5
+
+
+def test_removing_a_source_deletes_its_extraction(
+    stub_ollama: StubOllama, isolated_cwd: Path
+) -> None:
+    make_docs_zip(isolated_cwd)
+    runner.invoke(app, ["index-docs"])
+    cache = SETTINGS.db_path.parent / "docs-cache" / "manual-1.0"
+    assert cache.is_dir()
+    assert runner.invoke(app, ["sources", "-r", "manual-1.0", "-y"]).exit_code == 0
+    assert not cache.exists()

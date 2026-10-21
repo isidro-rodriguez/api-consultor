@@ -54,9 +54,13 @@ def isolated_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.fixture(autouse=True)
-def restore_settings() -> Generator[None]:
-    """`config.toml` modifica `SETTINGS` al arrancar la CLI: se restaura al acabar."""
+def restore_settings(tmp_path: Path) -> Generator[None]:
+    """El índice de cada test va a un directorio temporal, nunca al del usuario.
+
+    `config.toml` también modifica `SETTINGS` al arrancar la CLI: se restaura al acabar.
+    """
     snapshot = dataclasses.replace(SETTINGS)
+    SETTINGS.db_path = tmp_path / "data" / "consultor.db"
     yield
     for item in dataclasses.fields(snapshot):
         setattr(SETTINGS, item.name, getattr(snapshot, item.name))
