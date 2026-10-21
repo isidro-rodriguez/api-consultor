@@ -40,7 +40,7 @@ declares terminada una tarea que no hayas ejecutado.
 | `render.py`     | Toda la salida de consola: tema Monokai, Markdown, tablas, versión.                             |
 | `config.py`     | `Settings` inmutable (modelos, rutas, `retrieval_k`, `retrieval_candidates`, ancho de consola). |
 
-Nada imprime fuera de `render.py`. `Modelfile` define el modelo `api-consultor`.
+Nada imprime fuera de `render.py`. `src/api_consultor/Modelfile` (empaquetado) define el modelo `api-consultor`; `models.py` lo localiza y `api setup` lo crea.
 
 ## Convenciones
 
@@ -119,7 +119,7 @@ la recuperación.
    (`max_distance`) y `api ask --debug`~~ (hecho). El umbral está desactivado hasta
    calibrarlo con datos reales usando `--debug`.
 5. ~~Citas verificables (`[DOC-01]`)~~ (hecho: `citations.py`; el Modelfile también lo pide,
-   recréalo con `ollama create`).
+   recréalo con `api setup`).
 6. ~~Sources: flag de eliminar fuente~~ (hecho: `api sources --remove`).
 7. ~~Fuentes como hiperenlaces (Ctrl+clic) y `config.toml`~~ (hecho: `userconfig.py`, chunks con `path`/`line`,
    formato de índice 3; hay que reindexar para obtener ubicaciones).

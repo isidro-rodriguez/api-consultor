@@ -116,7 +116,7 @@ def test_ask_reports_missing_model(
     result = runner.invoke(app, ["ask", "hola"])
     assert result.exit_code == 1
     assert "Falta un modelo en Ollama" in result.output
-    assert "ollama pull" in result.output
+    assert "api setup" in result.output
 
 
 def test_index_docs_rejects_missing_directory() -> None:

@@ -7,6 +7,12 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Añadido
+
+- Instalable como herramienta global (`uv tool install`). El `Modelfile` viaja dentro
+  del paquete y el nuevo comando `api setup` descarga los modelos y crea `api-consultor`
+  (idempotente).
+
 ### Cambiado
 
 - La base de datos se guarda por defecto en la carpeta de datos del usuario, no en

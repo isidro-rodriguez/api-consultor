@@ -4,9 +4,11 @@ import logging
 import platform
 import shutil
 import sqlite3
+import subprocess
 from collections.abc import Callable, Generator, Iterator, Sequence
 from contextlib import contextmanager
 from functools import partial
+from importlib.resources import as_file
 from pathlib import Path
 from typing import Annotated, NoReturn, cast
 
@@ -24,6 +26,7 @@ from .docs import Files, collect, extract_doc_chunks, materialize
 from .evaluation import DEFAULT_KS, evaluate, load_cases, missing_sources
 from .indexer import extract_chunks
 from .llm import embed
+from .models import base_model, has_model, installed_models, modelfile
 from .render import (
     err_console,
     print_error,
@@ -150,8 +153,7 @@ def _handled_errors() -> Generator[None]:
         if exc.status_code == 404:
             _fail(
                 f"Falta un modelo en Ollama: {exc.error}",
-                f"ollama pull {SETTINGS.embed_model}  ·  "
-                f"ollama create {SETTINGS.chat_model} -f Modelfile",
+                "Ejecuta `api setup` para descargar y crear los modelos.",
             )
         _fail(f"Error de Ollama: {exc.error}")
 
@@ -411,6 +413,35 @@ def _remove_sources(store: Store, names: list[str], *, yes: bool) -> None:
         removed = store.remove(name)
         shutil.rmtree(_docs_cache() / name, ignore_errors=True)  # extracción de un .zip
         print_hint(f"Eliminada {name}: {removed} fragmentos.")
+
+
+def _ollama(*args: str) -> None:
+    """Ejecuta la CLI de Ollama mostrando su progreso; falla si termina con error."""
+    result = subprocess.run(["ollama", *args], check=False)
+    if result.returncode != 0:
+        _fail(f"`ollama {args[0]}` terminó con el código {result.returncode}.")
+
+
+@app.command()
+def setup() -> None:
+    """Descarga los modelos de Ollama y crea el modelo de chat (idempotente)."""
+    if shutil.which("ollama") is None:
+        _fail(
+            "No se encuentra el comando `ollama`.",
+            "Instálalo desde https://ollama.com y vuelve a ejecutar `api setup`.",
+        )
+    with _handled_errors():
+        installed = installed_models()
+        for name in (base_model(), SETTINGS.embed_model):
+            if has_model(installed, name):
+                print_hint(f"{name}: ya descargado.")
+            else:
+                print_hint(f"Descargando {name}...")
+                _ollama("pull", name)
+        print_hint(f"Creando el modelo {SETTINGS.chat_model}...")
+        with as_file(modelfile()) as path:
+            _ollama("create", SETTINGS.chat_model, "-f", str(path))
+    print_hint("Listo. Indexa algo (`api index <paquete>`) y pregunta con `api ask`.")
 
 
 @app.command()

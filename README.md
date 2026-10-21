@@ -20,14 +20,25 @@ pregunta ──► nombres + palabras (FTS5) + vectorial ──► fusión RRF �
 
 ## Instalación
 
+Como herramienta global (el comando `api` queda disponible en cualquier carpeta):
+
+```bash
+uv tool install git+https://github.com/isidro-rodriguez/api-consultor
+api setup        # descarga qwen3:8b y bge-m3 y crea el modelo api-consultor
+```
+
+Actualizar: `uv tool upgrade api-consultor` y, si cambió el `Modelfile`, `api setup`.
+
+Para desarrollar:
+
 ```bash
 git clone https://github.com/isidro-rodriguez/api-consultor
 cd api-consultor
 uv sync
-ollama pull qwen3:8b
-ollama pull bge-m3
-ollama create api-consultor -f Modelfile
+uv run api setup
 ```
+
+Los ejemplos de abajo usan `uv run api`; con la herramienta instalada basta `api`.
 
 ## Uso
 
@@ -63,7 +74,7 @@ formato y, por fuente, su tipo, versión y fecha de indexado.
   incompatibles y explica cómo reconstruir el índice (borrar el fichero de la base).
 - Las respuestas citan los fragmentos como `[DOC-01]`; el panel «Fuentes» marca los
   citados con ✔ y avisa si el modelo cita ids inexistentes o no cita nada. Tras
-  actualizar el `Modelfile`, recrea el modelo: `ollama create api-consultor -f Modelfile`.
+  actualizar el `Modelfile`, recrea el modelo con `api setup`.
 - Al preguntar, avisa si un paquete indexado ya no coincide con la versión instalada y
   marca esas fuentes en el panel de resultados. `api update` reindexa solo esas.
 - La versión se resuelve por la distribución instalada (`yaml` → PyYAML) y, para la
@@ -103,7 +114,7 @@ una plantilla comentada.
 Ruta: `%APPDATA%\api-consultor` (Windows), `~/.config/api-consultor` (Linux, o
 `$XDG_CONFIG_HOME`), `~/Library/Application Support/api-consultor` (macOS). Un fichero
 inválido se rechaza con un mensaje claro antes de ejecutar nada. El prompt y los
-parámetros del modelo siguen en `Modelfile`.
+parámetros del modelo siguen en `src/api_consultor/Modelfile`.
 
 ### Enlaces a las fuentes
 
