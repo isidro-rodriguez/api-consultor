@@ -115,32 +115,3 @@ la recuperación.
    concreto.
 5. Si algo no se puede completar con la arquitectura actual, dilo y propón la
    alternativa más simple en lugar de simular resultados.
-
-## Hoja de ruta (orden acordado)
-
-1. ~~Evaluación: Recall@k y MRR~~ (hecho: `api eval` y `tests/test_benchmark.py`).
-2. ~~Integridad del índice~~ (hecho: metadatos, validación, versiones y `api update`).
-3. ~~Chunking estructural de APIs sin truncado~~ (hecho: `doc_parts` en `indexer.py`).
-   Los nombres simples como `Path` o `rglob` ya se detectan con la recuperación híbrida.
-4. ~~Ranking: RRF, diversidad por símbolo (`max_per_symbol`), umbral opcional
-   (`max_distance`) y `api ask --debug`~~ (hecho). El umbral está desactivado hasta
-   calibrarlo con datos reales usando `--debug`.
-5. ~~Citas verificables (`[DOC-01]`)~~ (hecho: `citations.py`; el Modelfile también lo pide,
-   recréalo con `api setup`).
-6. ~~Sources: flag de eliminar fuente~~ (hecho: `api sources --remove`).
-7. ~~Fuentes como hiperenlaces (Ctrl+clic) y `config.toml`~~ (hecho: `userconfig.py`, chunks con `path`/`line`,
-   formato de índice 3; hay que reindexar para obtener ubicaciones).
-8. Aplazado: símbolos sin docstring, AST/reexportaciones, reranker. Hecho: propiedades y
-   miembros heredados de bases privadas (los de bases públicas no se duplican).
-9. Empaquetado como paquete instalable UV tool
-   - Almacenaje de configuración persistente en directorio correspondiente (si se considera útil)
-   - Almacenaje de la base de datos en dicho directorio
-   - Objetivo: `api ask "¿Cuáles son los tipos de datos en Python?"` en cualquier punto
-   - Hecho: `uv tool install`, `api setup`, `Modelfile` empaquetado, datos y docs en la
-     carpeta del usuario, formato de índice 4 (rutas relativas + raíz), `--python`,
-     `--relocate`.
-10. Repositorio PyPi: metadatos, LICENSE (MIT) y `py.typed` listos. Pendiente (manual):
-    publicador de confianza en PyPI y entorno `pypi` en GitHub (ver README); luego añadir
-    `uv tool install api-consultor` a la instalación.
-11. ~~CI de Github (windows, linux, publicación en pypi) y dependabot~~ (hecho:
-    `.github/`; la primera publicación requiere configurar el publicador en PyPI).
