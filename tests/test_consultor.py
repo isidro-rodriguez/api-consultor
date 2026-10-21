@@ -1,3 +1,4 @@
+import dataclasses
 from pathlib import Path
 
 import pytest
@@ -6,10 +7,12 @@ from api_consultor.config import SETTINGS
 from api_consultor.consultor import (
     _IDENTIFIER,
     Consultor,
-    _format_context,
+    _diversify,
     _fuse,
+    _fuse_detailed,
     _lexical_query,
     _terms,
+    format_context,
 )
 from api_consultor.store import Chunk, Store
 
@@ -34,11 +37,11 @@ def test_identifier_regex_finds_qualified_and_snake_case_names() -> None:
 
 
 def test_format_context_without_chunks_is_empty_tag() -> None:
-    assert _format_context([]) == "<docs/>"
+    assert format_context([]) == "<docs/>"
 
 
 def test_format_context_includes_source_package_and_version() -> None:
-    text = _format_context([Chunk("lib.f", "lib", "1.0", "def lib.f()")])
+    text = format_context([Chunk("lib.f", "lib", "1.0", "def lib.f()")])
     assert '<docs source="lib.f" package="lib" version="1.0">' in text
     assert text.endswith("</docs>")
 
@@ -132,3 +135,96 @@ def test_retrieve_finds_identifiers_inside_documentation(mixed: Consultor) -> No
 
 def test_retrieve_can_return_more_candidates_than_retrieval_k(mixed: Consultor) -> None:
     assert len(mixed.retrieve("relleno", k=40)) == 40
+
+
+def chunks_named(*names: str, package: str = "p") -> list[Chunk]:
+    return [Chunk(name, package, "1", name) for name in names]
+
+
+def test_fuse_detailed_reports_the_rank_in_each_signal() -> None:
+    a, b = chunks_named("a", "b")
+    fused = _fuse_detailed([("N", 3.0, [a]), ("V", 1.0, [b, a])])
+    by_name = {chunk.qualname: (score, ranks) for chunk, score, ranks in fused}
+    assert by_name["a"][1] == {"N": 1, "V": 2}
+    assert by_name["b"][1] == {"V": 1}
+    assert by_name["a"][0] > by_name["b"][0]
+
+
+def test_diversify_caps_chunks_per_symbol() -> None:
+    ordered = chunks_named("f", "f [2]", "f [3]", "g", "h")
+    picked = _diversify(ordered, limit=4, per_symbol=2)
+    assert [c.qualname for c in picked] == ["f", "f [2]", "g", "h"]
+
+
+def test_diversify_backfills_when_there_is_not_enough_variety() -> None:
+    ordered = chunks_named("f", "f [2]", "f [3]")
+    picked = _diversify(ordered, limit=3, per_symbol=1)
+    assert [c.qualname for c in picked] == ["f", "f [2]", "f [3]"]
+
+
+def test_diversify_keeps_the_original_order() -> None:
+    ordered = chunks_named("a", "b", "a [2]", "a [3]", "c")
+    picked = _diversify(ordered, limit=4, per_symbol=2)
+    assert [c.qualname for c in picked] == ["a", "b", "a [2]", "c"]
+
+
+def test_same_symbol_in_different_packages_is_not_merged() -> None:
+    ordered = [
+        *chunks_named("f", "f [2]", package="uno"),
+        *chunks_named("f", package="dos"),
+    ]
+    assert len(_diversify(ordered, limit=3, per_symbol=2)) == 3
+
+
+def test_search_exposes_candidates_with_signals_and_distance(
+    mixed: Consultor,
+) -> None:
+    retrieval = mixed.search("¿para qué sirve haversine?")
+    top = retrieval.candidates[0]
+    assert top.chunk.qualname == "geo.distance.haversine"
+    assert top.selected
+    assert {"S", "L", "V"} <= set(top.ranks)
+    assert top.distance is not None
+    assert retrieval.names == []
+    assert "haversine" in retrieval.terms
+    assert retrieval.best_distance is not None
+    assert retrieval.abstain_reason is None
+
+
+def with_threshold(monkeypatch: pytest.MonkeyPatch, value: float | None) -> None:
+    patched = dataclasses.replace(SETTINGS, max_distance=value)
+    monkeypatch.setattr("api_consultor.consultor.SETTINGS", patched)
+
+
+def test_no_threshold_never_abstains(
+    mixed: Consultor, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with_threshold(monkeypatch, None)
+    assert mixed.search("zzzz qqqq xxxx").abstain_reason is None
+
+
+def test_abstains_when_nothing_is_close_enough(
+    mixed: Consultor, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with_threshold(monkeypatch, 0.5)
+    retrieval = mixed.search("zzzz qqqq xxxx")
+    assert retrieval.abstain_reason is not None
+    assert "0.5" in retrieval.abstain_reason
+    assert retrieval.chunks == []
+    assert retrieval.candidates  # siguen disponibles para el diagnóstico
+
+
+def test_a_name_match_overrides_the_threshold(
+    mixed: Consultor, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with_threshold(monkeypatch, 0.0001)
+    retrieval = mixed.search("haversine")
+    assert retrieval.abstain_reason is None
+    assert retrieval.chunks[0].qualname == "geo.distance.haversine"
+
+
+def test_threshold_allows_close_matches(
+    mixed: Consultor, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with_threshold(monkeypatch, 1.3)
+    assert mixed.search("texto de relleno 3").abstain_reason is None

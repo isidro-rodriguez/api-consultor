@@ -279,10 +279,17 @@ class Store:
         return [Chunk(*row) for row in rows]
 
     def search(self, embedding: Sequence[float], k: int) -> list[Chunk]:
+        return [chunk for chunk, _distance in self.search_scored(embedding, k)]
+
+    def search_scored(
+        self, embedding: Sequence[float], k: int
+    ) -> list[tuple[Chunk, float]]:
+        """Vecinos más cercanos con su distancia (menor = más parecido)."""
         self.check_vector(embedding)
         rows = self._db.execute(
             f"""
-            SELECT {", ".join("c." + col.strip() for col in _COLUMNS.split(","))}
+            SELECT {", ".join("c." + col.strip() for col in _COLUMNS.split(","))},
+                   v.distance
             FROM (
                 SELECT rowid, distance FROM vec_chunks
                 WHERE embedding MATCH ? AND k = ?
@@ -292,7 +299,7 @@ class Store:
             """,
             (sqlite_vec.serialize_float32(list(embedding)), k),
         )
-        return [Chunk(*row) for row in rows]
+        return [(Chunk(*row[:4]), float(row[4])) for row in rows]
 
 
 def _now() -> str:

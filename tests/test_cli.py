@@ -224,3 +224,47 @@ def test_indexing_fails_early_when_the_model_dimension_does_not_match(
 def test_index_records_the_installed_version(stub_ollama: StubOllama) -> None:
     assert runner.invoke(app, ["index", "json"]).exit_code == 0
     assert platform.python_version() in runner.invoke(app, ["sources"]).output
+
+
+def test_ask_abstains_without_generating_when_evidence_is_weak(
+    indexed: StubOllama, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import dataclasses
+
+    from api_consultor.config import SETTINGS
+
+    patched = dataclasses.replace(SETTINGS, max_distance=0.1)
+    monkeypatch.setattr("api_consultor.consultor.SETTINGS", patched)
+    result = runner.invoke(app, ["ask", "zzzz qqqq xxxx"])
+    assert result.exit_code == 0, result.output
+    assert "No encuentro documentación suficiente" in result.output
+    assert "Motivo" in result.output
+    assert indexed.messages == []
+
+
+def test_ask_debug_shows_candidates_signals_and_context_size(
+    indexed: StubOllama,
+) -> None:
+    result = runner.invoke(app, ["ask", "--debug", "os.listdir"])
+    assert result.exit_code == 0, result.output
+    assert "Candidatos" in result.output
+    assert "Mejor distancia" in result.output
+    assert "Umbral" in result.output
+    assert "desactivado" in result.output
+    assert "caracteres" in result.output
+    assert "os.md#os.listdir" in result.output
+    assert "Respuesta de prueba." in result.output
+
+
+def test_ask_debug_also_explains_an_abstention(
+    indexed: StubOllama, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import dataclasses
+
+    from api_consultor.config import SETTINGS
+
+    patched = dataclasses.replace(SETTINGS, max_distance=0.1)
+    monkeypatch.setattr("api_consultor.consultor.SETTINGS", patched)
+    result = runner.invoke(app, ["ask", "-d", "zzzz qqqq xxxx"])
+    assert "Abstención" in result.output
+    assert indexed.messages == []

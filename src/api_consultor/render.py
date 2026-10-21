@@ -27,6 +27,7 @@ from rich.theme import Theme
 from typer import rich_utils
 
 from .config import SETTINGS
+from .consultor import Retrieval
 from .evaluation import EvalReport
 from .store import Chunk, SourceInfo
 from .versions import VersionStatus
@@ -212,6 +213,53 @@ def show_sources(chunks: Sequence[Chunk], stale: Collection[str] = ()) -> None:
     console.print()
     console.print(_fit(panel))
     console.print()
+
+
+def show_debug(retrieval: Retrieval, context_chars: int, limit: int = 15) -> None:
+    """Diagnóstico de la recuperación: señales, candidatos y tamaño del contexto."""
+    summary = Table.grid(padding=(0, 2))
+    summary.add_column(style="muted", justify="right")
+    summary.add_column(style=FG, overflow="fold")
+    summary.add_row("Nombres", ", ".join(retrieval.names) or "—")
+    summary.add_row("Términos", ", ".join(retrieval.terms) or "—")
+    best = retrieval.best_distance
+    summary.add_row("Mejor distancia", "—" if best is None else f"{best:.3f}")
+    threshold = SETTINGS.max_distance
+    summary.add_row("Umbral", "desactivado" if threshold is None else f"{threshold}")
+    summary.add_row("Contexto", f"{context_chars:,} caracteres")
+    if retrieval.abstain_reason is not None:
+        summary.add_row("Abstención", Text(retrieval.abstain_reason, style="warning"))
+    table = Table(
+        title="Candidatos",
+        title_style="title",
+        title_justify="left",
+        caption="N nombre cualificado · S nombre corto · L palabras · V vectorial",
+        caption_style="muted",
+        caption_justify="left",
+        box=box.ROUNDED,
+        border_style="muted",
+        header_style=f"bold {FG}",
+        expand=True,
+    )
+    table.add_column("", width=1, no_wrap=True)
+    table.add_column("Fragmento", ratio=1, overflow="ellipsis", no_wrap=True)
+    for signal in "NSLV":
+        table.add_column(signal, justify="right", no_wrap=True)
+    table.add_column("Dist.", justify="right", no_wrap=True)
+    table.add_column("Punt.", justify="right", no_wrap=True)
+    for candidate in retrieval.candidates[:limit]:
+        mark = Text("✔", style="success") if candidate.selected else Text(" ")
+        distance = candidate.distance
+        table.add_row(
+            mark,
+            candidate.chunk.qualname,
+            *(str(candidate.ranks.get(signal, "·")) for signal in "NSLV"),
+            "—" if distance is None else f"{distance:.3f}",
+            f"{candidate.score * 100:.2f}",
+        )
+    console.print()
+    console.print(_fit(summary))
+    console.print(_fit(table))
 
 
 # --- Indexado -----------------------------------------------------------------

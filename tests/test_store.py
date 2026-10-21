@@ -272,3 +272,15 @@ def test_a_legacy_index_gets_sources_inferred_from_its_chunks(tmp_path: Path) ->
             SourceInfo("pkg", "2.5", 1, kind="package"),
         ]
         assert migrated.meta()["embed_model"] == "modelo-b"
+
+
+def test_search_scored_returns_distances_in_ascending_order(store: Store) -> None:
+    store.replace(
+        "pkg",
+        [chunk("pkg.a"), chunk("pkg.b")],
+        [[1.0, 0, 0, 0], [0, 1.0, 0, 0]],
+    )
+    scored = store.search_scored([1.0, 0, 0, 0], 2)
+    assert [c.qualname for c, _ in scored] == ["pkg.a", "pkg.b"]
+    assert scored[0][1] == pytest.approx(0.0)
+    assert scored[1][1] > scored[0][1]

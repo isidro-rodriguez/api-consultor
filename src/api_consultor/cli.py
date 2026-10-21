@@ -17,7 +17,7 @@ from rich.progress import Progress
 
 from . import __version__
 from .config import SETTINGS
-from .consultor import Consultor
+from .consultor import Consultor, format_context
 from .docs import collect, extract_doc_chunks
 from .evaluation import DEFAULT_KS, evaluate, load_cases, missing_sources
 from .indexer import extract_chunks
@@ -29,6 +29,7 @@ from .render import (
     print_warning,
     progress_bar,
     prompt,
+    show_debug,
     show_evaluation,
     show_sources,
     show_sources_table,
@@ -251,11 +252,22 @@ def _warn_stale(store: Store) -> frozenset[str]:
     return frozenset(s.source.package for s in stale)
 
 
-def _answer(consultor: Consultor, question: str, stale: frozenset[str]) -> None:
+def _answer(
+    consultor: Consultor, question: str, stale: frozenset[str], *, debug: bool = False
+) -> None:
     with status("Buscando en la documentación..."):
-        chunks = consultor.retrieve(question)
-    stream_markdown(consultor.stream(question, chunks))
-    show_sources(chunks, stale)
+        retrieval = consultor.search(question)
+    if debug:
+        context = len(format_context(retrieval.chunks))
+        show_debug(retrieval, context)
+    if retrieval.abstain_reason is not None:
+        print_warning(
+            "No encuentro documentación suficiente para responder con seguridad.",
+            f"Motivo: {retrieval.abstain_reason}. Reformula o indexa más fuentes.",
+        )
+        return
+    stream_markdown(consultor.stream(question, retrieval.chunks))
+    show_sources(retrieval.chunks, stale)
 
 
 @app.command()
@@ -266,6 +278,12 @@ def ask(
             help="Pregunta; sin ella, modo interactivo.", show_default=False
         ),
     ] = None,
+    debug: Annotated[
+        bool,
+        typer.Option(
+            "--debug", "-d", help="Muestra candidatos, señales y tamaño del contexto."
+        ),
+    ] = False,
 ) -> None:
     """Consulta lo indexado y responde con el modelo local."""
     with _store() as store:
@@ -282,7 +300,7 @@ def ask(
         )
         with _handled_errors():
             for text in questions:
-                _answer(consultor, text, stale)
+                _answer(consultor, text, stale, debug=debug)
 
 
 @app.command()

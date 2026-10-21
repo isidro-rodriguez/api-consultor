@@ -37,6 +37,7 @@ uv run api index-docs                   # contenido de docs/ (zip, carpetas, fic
 uv run api index-docs -x 'whatsnew/*'   # omitiendo rutas (patrones fnmatch)
 uv run api ask "¿cómo hago un POST con timeout?"
 uv run api ask                          # modo interactivo
+uv run api ask --debug "..."            # muestra candidatos, señales y distancias
 uv run api sources                      # qué hay indexado y si está al día
 uv run api update                       # reindexa los paquetes que han cambiado de versión
 uv run api eval evals/stdlib.toml       # mide la calidad de la recuperación
@@ -80,7 +81,8 @@ marcha: usa el índice real.
 ## Configuración
 
 Modelos, ruta de la base, fragmentos enviados al modelo (`retrieval_k`), candidatos
-por método (`retrieval_candidates`) y ancho de consola están en
+por método (`retrieval_candidates`), máximo de fragmentos por símbolo (`max_per_symbol`),
+umbral de relevancia (`max_distance`, desactivado por defecto) y ancho de consola están en
 `src/api_consultor/config.py`. Los parámetros y el prompt del modelo, en `Modelfile`.
 
 ## Desarrollo

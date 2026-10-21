@@ -9,6 +9,11 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Añadido
 
+- `api ask --debug`: muestra candidatos, señales (N/S/L/V), distancias y tamaño del contexto.
+- Diversidad por símbolo: como máximo `max_per_symbol` (2) fragmentos del mismo símbolo,
+  con relleno si no hay variedad suficiente.
+- Umbral de relevancia opcional (`max_distance`, desactivado): si ninguna coincidencia por
+  nombre y la mejor distancia lo supera, `ask` se abstiene en lugar de inventar.
 - Comando `api eval`: mide Recall@k y MRR de la recuperación con casos de referencia
   en TOML, con desglose por categoría y lista de fallos (`-v` para todos los casos).
 - Casos de ejemplo sobre la biblioteca estándar en `evals/stdlib.toml`.

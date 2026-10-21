@@ -110,8 +110,9 @@ la recuperación.
 2. ~~Integridad del índice~~ (hecho: metadatos, validación, versiones y `api update`).
 3. ~~Chunking estructural de APIs sin truncado~~ (hecho: `doc_parts` en `indexer.py`).
    Los nombres simples como `Path` o `rglob` ya se detectan con la recuperación híbrida.
-4. ~~Candidatos ampliados y fusión RRF~~ (hecho). Pendiente: deduplicación por símbolo
-   y umbral de relevancia.
+4. ~~Ranking: RRF, diversidad por símbolo (`max_per_symbol`), umbral opcional
+   (`max_distance`) y `api ask --debug`~~ (hecho). El umbral está desactivado hasta
+   calibrarlo con datos reales usando `--debug`.
 5. Citas verificables (`[DOC-01]`) con comprobación de que existen en el contexto.
 6. Sources: flag de eliminar fuente
 7. Transformar las fuentes en hiperenlaces que abran el editor de texto en el documento
