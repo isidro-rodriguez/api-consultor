@@ -44,7 +44,7 @@ def test_help_lists_all_commands() -> None:
 
 
 def test_version_flag_shows_panel() -> None:
-    for flag in ("--version", "-v"):
+    for flag in ("--version", "-V"):
         result = runner.invoke(app, [flag])
         assert result.exit_code == 0
         assert f"v{__version__}" in result.output
