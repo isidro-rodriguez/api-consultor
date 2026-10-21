@@ -9,6 +9,9 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Añadido
 
+- Citas verificables: cada fragmento llega al modelo con un id (`DOC-01`), se le pide
+  citarlos y `ask` comprueba la respuesta. El panel «Fuentes» muestra los ids, marca
+  con ✔ los citados y avisa de citas inexistentes o de respuestas sin citas.
 - `api ask --debug`: muestra candidatos, señales (N/S/L/V), distancias y tamaño del contexto.
 - Diversidad por símbolo: como máximo `max_per_symbol` (2) fragmentos del mismo símbolo,
   con relleno si no hay variedad suficiente.

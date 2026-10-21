@@ -113,7 +113,8 @@ la recuperación.
 4. ~~Ranking: RRF, diversidad por símbolo (`max_per_symbol`), umbral opcional
    (`max_distance`) y `api ask --debug`~~ (hecho). El umbral está desactivado hasta
    calibrarlo con datos reales usando `--debug`.
-5. Citas verificables (`[DOC-01]`) con comprobación de que existen en el contexto.
+5. ~~Citas verificables (`[DOC-01]`)~~ (hecho: `citations.py`; el Modelfile también lo pide,
+   recréalo con `ollama create`).
 6. Sources: flag de eliminar fuente
 7. Transformar las fuentes en hiperenlaces que abran el editor de texto en el documento
 8. Aplazado: símbolos sin docstring, AST/herencia/reexportaciones, reranker.

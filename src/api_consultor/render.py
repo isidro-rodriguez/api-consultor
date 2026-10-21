@@ -26,6 +26,7 @@ from rich.text import Text
 from rich.theme import Theme
 from typer import rich_utils
 
+from .citations import Citations, doc_id
 from .config import SETTINGS
 from .consultor import Retrieval
 from .evaluation import EvalReport
@@ -167,11 +168,12 @@ def status(message: str) -> Status:
 # --- Respuesta ----------------------------------------------------------------
 
 
-def stream_markdown(tokens: Iterable[str]) -> None:
+def stream_markdown(tokens: Iterable[str]) -> str:
     """Muestra la respuesta mientras llega y la deja renderizada como Markdown.
 
     Durante el streaming se redibuja en vivo (con un spinner hasta el primer token);
     al terminar se imprime una sola vez completa, aunque supere el alto de la terminal.
+    Devuelve el texto completo de la respuesta.
     """
     buffer = ""
     with Live(
@@ -186,22 +188,36 @@ def stream_markdown(tokens: Iterable[str]) -> None:
             live.update(_markdown(buffer))
     console.print()
     console.print(_markdown(buffer))
+    return buffer
 
 
-def show_sources(chunks: Sequence[Chunk], stale: Collection[str] = ()) -> None:
-    """Panel con los fragmentos usados; marca los de fuentes con versión obsoleta."""
+def show_sources(
+    chunks: Sequence[Chunk],
+    stale: Collection[str] = (),
+    citations: Citations | None = None,
+) -> None:
+    """Panel con los fragmentos usados, su identificador y si la respuesta los citó.
+
+    Marca con ✔ los citados y con ⚠ las fuentes con versión obsoleta. Si el modelo
+    citó identificadores inexistentes o no citó nada, lo avisa bajo el panel.
+    """
     if not chunks:
         return
+    cited = set(citations.valid) if citations else set()
     grid = Table.grid(padding=(0, 2))
+    grid.add_column(no_wrap=True)
     grid.add_column(style="info", overflow="fold")
     grid.add_column(style="muted", no_wrap=True)
-    for chunk in chunks:
+    for position, chunk in enumerate(chunks, start=1):
         numbered = chunk.version[:1].isdigit() and chunk.version not in chunk.package
         version = f" v{chunk.version}" if numbered else ""
         origin = Text(f"{chunk.package}{version}", style="muted")
         if chunk.package in stale:
             origin.append(" ⚠ obsoleta", style="warning")
-        grid.add_row(chunk.qualname, origin)
+        mark = Text(doc_id(position), style="success" if position in cited else "muted")
+        if position in cited:
+            mark.append(" ✔", style="success")
+        grid.add_row(mark, chunk.qualname, origin)
     panel = Panel(
         grid,
         title="Fuentes",
@@ -212,7 +228,23 @@ def show_sources(chunks: Sequence[Chunk], stale: Collection[str] = ()) -> None:
     )
     console.print()
     console.print(_fit(panel))
+    if citations is not None:
+        _show_citation_issues(citations)
     console.print()
+
+
+def _show_citation_issues(citations: Citations) -> None:
+    if citations.invalid:
+        names = ", ".join(citations.invalid)
+        print_warning(
+            f"La respuesta cita fuentes inexistentes ({names}).",
+            "Ignora esas citas y verifica la información en la documentación.",
+        )
+    elif not citations.valid:
+        print_warning(
+            "La respuesta no cita ninguna fuente.",
+            "Contrástala con los fragmentos listados.",
+        )
 
 
 def show_debug(retrieval: Retrieval, context_chars: int, limit: int = 15) -> None:

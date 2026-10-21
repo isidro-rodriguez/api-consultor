@@ -42,7 +42,7 @@ def test_format_context_without_chunks_is_empty_tag() -> None:
 
 def test_format_context_includes_source_package_and_version() -> None:
     text = format_context([Chunk("lib.f", "lib", "1.0", "def lib.f()")])
-    assert '<docs source="lib.f" package="lib" version="1.0">' in text
+    assert '<docs id="DOC-01" source="lib.f" package="lib" version="1.0">' in text
     assert text.endswith("</docs>")
 
 
@@ -66,7 +66,7 @@ def test_stream_sends_context_and_question(
     answer = "".join(consultor.stream("función número 3", chunks))
     assert answer == "Respuesta de prueba."
     content = stub_ollama.messages[0][0]["content"]
-    assert "<docs source=" in content
+    assert "<docs id=" in content
     assert content.endswith("Pregunta: función número 3")
 
 
@@ -228,3 +228,18 @@ def test_threshold_allows_close_matches(
 ) -> None:
     with_threshold(monkeypatch, 1.3)
     assert mixed.search("texto de relleno 3").abstain_reason is None
+
+
+def test_format_context_numbers_blocks_with_stable_ids() -> None:
+    context = format_context(chunks_named("a", "b"))
+    assert '<docs id="DOC-01" source="a"' in context
+    assert '<docs id="DOC-02" source="b"' in context
+
+
+def test_stream_asks_the_model_to_cite_ids(
+    consultor: Consultor, stub_ollama: StubOllama
+) -> None:
+    list(consultor.stream("¿qué?", chunks_named("a")))
+    prompt = stub_ollama.messages[0][0]["content"]
+    assert "[DOC-01]" in prompt
+    assert prompt.endswith("Pregunta: ¿qué?")

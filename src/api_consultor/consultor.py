@@ -4,6 +4,7 @@ import re
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 
+from .citations import INSTRUCTION, doc_id
 from .config import SETTINGS
 from .llm import embed, stream_chat
 from .store import Chunk, Store
@@ -125,9 +126,9 @@ def format_context(chunks: list[Chunk]) -> str:
     if not chunks:
         return "<docs/>"
     return "\n".join(
-        f'<docs source="{c.qualname}" package="{c.package}" version="{c.version}">\n'
-        f"{c.content}\n</docs>"
-        for c in chunks
+        f'<docs id="{doc_id(i)}" source="{c.qualname}" package="{c.package}" '
+        f'version="{c.version}">\n{c.content}\n</docs>'
+        for i, c in enumerate(chunks, start=1)
     )
 
 
@@ -203,5 +204,5 @@ class Consultor:
 
     def stream(self, question: str, chunks: list[Chunk]) -> Iterator[str]:
         """Genera la respuesta en streaming a partir de los fragmentos recuperados."""
-        content = f"{format_context(chunks)}\n\nPregunta: {question}"
+        content = f"{format_context(chunks)}\n\n{INSTRUCTION}\n\nPregunta: {question}"
         yield from stream_chat([{"role": "user", "content": content}])

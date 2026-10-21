@@ -268,3 +268,11 @@ def test_ask_debug_also_explains_an_abstention(
     result = runner.invoke(app, ["ask", "-d", "zzzz qqqq xxxx"])
     assert "Abstención" in result.output
     assert indexed.messages == []
+
+
+def test_ask_verifies_citations_in_the_answer(indexed: StubOllama) -> None:
+    indexed.tokens = ["Usa listdir [DOC-01] ", "y también [DOC-99]."]
+    result = runner.invoke(app, ["ask", "os.listdir"])
+    assert result.exit_code == 0, result.output
+    assert "DOC-01 ✔" in result.output
+    assert "inexistentes (DOC-99)" in result.output

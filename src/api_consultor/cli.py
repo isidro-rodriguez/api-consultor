@@ -16,6 +16,7 @@ from rich.logging import RichHandler
 from rich.progress import Progress
 
 from . import __version__
+from .citations import check_citations
 from .config import SETTINGS
 from .consultor import Consultor, format_context
 from .docs import collect, extract_doc_chunks
@@ -266,8 +267,9 @@ def _answer(
             f"Motivo: {retrieval.abstain_reason}. Reformula o indexa más fuentes.",
         )
         return
-    stream_markdown(consultor.stream(question, retrieval.chunks))
-    show_sources(retrieval.chunks, stale)
+    answer = stream_markdown(consultor.stream(question, retrieval.chunks))
+    citations = check_citations(answer, len(retrieval.chunks))
+    show_sources(retrieval.chunks, stale, citations)
 
 
 @app.command()

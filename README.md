@@ -57,6 +57,9 @@ formato y, por fuente, su tipo, versión y fecha de indexado.
 
 - Si cambias `embed_model` o `embed_dim`, la CLI se niega a insertar o consultar vectores
   incompatibles y explica cómo reconstruir el índice (borrar `data/consultor.db`).
+- Las respuestas citan los fragmentos como `[DOC-01]`; el panel «Fuentes» marca los
+  citados con ✔ y avisa si el modelo cita ids inexistentes o no cita nada. Tras
+  actualizar el `Modelfile`, recrea el modelo: `ollama create api-consultor -f Modelfile`.
 - Al preguntar, avisa si un paquete indexado ya no coincide con la versión instalada y
   marca esas fuentes en el panel de resultados. `api update` reindexa solo esas.
 - La versión se resuelve por la distribución instalada (`yaml` → PyYAML) y, para la

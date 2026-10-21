@@ -5,6 +5,7 @@ import pytest
 from rich.console import Console
 
 from api_consultor import render
+from api_consultor.citations import Citations
 from api_consultor.store import Chunk, SourceInfo
 
 type Capture = Callable[[int], StringIO]
@@ -101,3 +102,33 @@ def test_show_version_falls_back_to_plain_name_in_narrow_terminals(
     text = buffer.getvalue()
     assert "ApiConsultor" in text
     assert "/_/" not in text
+
+
+def test_stream_markdown_returns_the_full_answer(capture: Capture) -> None:
+    capture(100)
+    assert render.stream_markdown(["Hola ", "mundo"]) == "Hola mundo"
+
+
+def test_show_sources_marks_cited_chunks(capture: Capture) -> None:
+    buffer = capture(100)
+    chunks = [Chunk("a.f", "a", "1.0", "x"), Chunk("a.g", "a", "1.0", "y")]
+    render.show_sources(chunks, citations=Citations((2,), ()))
+    text = buffer.getvalue()
+    assert "DOC-01" in text
+    assert "DOC-02 ✔" in text
+    assert "DOC-01 ✔" not in text
+    assert "no cita" not in text
+
+
+def test_show_sources_warns_about_invented_citations(capture: Capture) -> None:
+    buffer = capture(100)
+    render.show_sources(
+        [Chunk("a.f", "a", "1.0", "x")], citations=Citations((), ("DOC-09",))
+    )
+    assert "inexistentes (DOC-09)" in buffer.getvalue()
+
+
+def test_show_sources_warns_when_nothing_is_cited(capture: Capture) -> None:
+    buffer = capture(100)
+    render.show_sources([Chunk("a.f", "a", "1.0", "x")], citations=Citations((), ()))
+    assert "no cita ninguna fuente" in buffer.getvalue()
