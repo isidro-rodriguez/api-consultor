@@ -9,16 +9,51 @@ import pkgutil
 from collections.abc import Iterator
 from types import ModuleType
 
+from .docs import sections, split_text
 from .store import Chunk
 from .versions import UNKNOWN, installed_version
 
 log = logging.getLogger(__name__)
 
 MAX_CHARS = 2000  # ~500 tokens por chunk: 5 chunks caben de sobra en 8k de contexto
+CONTINUATION = " (continuación 99)"  # marca máxima que se añade a las cabeceras
+MIN_BODY = 500  # espacio mínimo para el docstring aunque la firma sea larguísima
 
 
 def _version(package: str) -> str:
     return installed_version(package) or UNKNOWN
+
+
+def doc_parts(doc: str, limit: int) -> list[str]:
+    """Divide un docstring en partes de hasta `limit` caracteres sin perder nada.
+
+    Respeta las secciones (`Parameters`, `Returns`, `Examples`…): agrupa secciones
+    completas mientras quepan y solo parte por párrafos las que no caben solas.
+    """
+    parts: list[str] = []
+    buffer = ""
+
+    def flush() -> None:
+        nonlocal buffer
+        if buffer.strip():
+            parts.append(buffer.strip("\n"))
+        buffer = ""
+
+    for title, body in sections(doc):
+        block = f"{title}\n{body}".strip("\n") if title else body.strip("\n")
+        if not block.strip():
+            continue
+        if len(block) <= limit:
+            if buffer and len(buffer) + len(block) + 2 > limit:
+                flush()
+            buffer = f"{buffer}\n\n{block}" if buffer else block
+            continue
+        flush()
+        pieces = list(split_text(body, limit - len(title) - 1))
+        for index, piece in enumerate(pieces):
+            parts.append(f"{title}\n{piece}".strip("\n") if index == 0 else piece)
+    flush()
+    return parts
 
 
 def _header(qualname: str, obj: object) -> str:
@@ -74,7 +109,10 @@ def _public_methods(cls: type) -> Iterator[tuple[str, object]]:
 
 
 def extract_chunks(package: str) -> list[Chunk]:
-    """Devuelve un chunk por módulo, función, clase y método público con docstring.
+    """Devuelve chunks de cada módulo, función, clase y método público con docstring.
+
+    Un docstring largo se reparte en varios chunks por secciones y párrafos; ninguno
+    pierde texto (`MAX_CHARS` es un límite de tamaño, no un truncado).
 
     Lanza ModuleNotFoundError si el paquete no está instalado en el entorno.
     """
@@ -87,8 +125,16 @@ def extract_chunks(package: str) -> list[Chunk]:
         if doc is None or not doc.strip() or id(obj) in seen:
             return
         seen.add(id(obj))
-        content = f"{_header(qualname, obj)}\n\n{doc}"[:MAX_CHARS]
-        chunks.append(Chunk(qualname, package, version, content))
+        header = _header(qualname, obj)
+        reserved = len(header) + len(CONTINUATION) + 8  # cabecera, marca y saltos
+        limit = max(MAX_CHARS - reserved, MIN_BODY)
+        for number, part in enumerate(doc_parts(doc, limit), start=1):
+            if number == 1:
+                label, text = qualname, f"{header}\n\n{part}"
+            else:  # continuación: misma cabecera y etiqueta única
+                label = f"{qualname} [{number}]"
+                text = f"{header} (continuación {number})\n\n{part}"
+            chunks.append(Chunk(label, package, version, text))
 
     for module in _walk_modules(package):
         add(module.__name__, module)

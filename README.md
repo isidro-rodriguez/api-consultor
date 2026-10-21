@@ -103,5 +103,6 @@ uv run pytest
 
 - La calidad de las respuestas depende de la documentación disponible: los símbolos sin
   docstring no se indexan.
-- Los fragmentos de APIs Python se truncan a 2000 caracteres.
+- Un docstring largo se reparte en varios fragmentos (`nombre [2]`…): el modelo puede
+  recibir solo uno de ellos.
 - No hay umbral de relevancia: siempre se responde con lo recuperado.

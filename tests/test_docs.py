@@ -3,10 +3,10 @@ from pathlib import Path
 
 from api_consultor.docs import (
     CHUNK_CHARS,
-    _sections,
-    _split,
     collect,
     extract_doc_chunks,
+    sections,
+    split_text,
 )
 
 SPHINX = """\
@@ -25,13 +25,13 @@ os.listdir(path='.')
 
 
 def test_sections_detect_setext_headings() -> None:
-    sections = list(_sections(SPHINX))
-    assert [title for title, _ in sections] == [
+    found = list(sections(SPHINX))
+    assert [title for title, _ in found] == [
         "",
         '"os" --- Interfaces del sistema',
         "Archivos",
     ]
-    assert "os.listdir" in sections[2][1]
+    assert "os.listdir" in found[2][1]
 
 
 def test_sections_detect_atx_headings_but_not_inside_fences() -> None:
@@ -40,18 +40,18 @@ def test_sections_detect_atx_headings_but_not_inside_fences() -> None:
         "```python\n# comentario, no titulo\n```\n\n"
         "## Sub\n\nfin\n"
     )
-    titles = [title for title, _ in _sections(text)]
+    titles = [title for title, _ in sections(text)]
     assert titles == ["", "Titulo", "Sub"]
 
 
 def test_sections_ignore_table_borders() -> None:
     text = "Nombre   Valor\n=======  =====\nuno      1\n"
-    assert [title for title, _ in _sections(text)] == [""]
+    assert [title for title, _ in sections(text)] == [""]
 
 
 def test_split_respects_limit_without_cutting_paragraphs() -> None:
     paragraphs = [f"parrafo {i} " + "x" * 390 for i in range(10)]
-    chunks = list(_split("\n\n".join(paragraphs), 1000))
+    chunks = list(split_text("\n\n".join(paragraphs), 1000))
     assert len(chunks) > 1
     assert all(len(chunk) <= 1000 for chunk in chunks)
     assert all(paragraph in "\n\n".join(chunks) for paragraph in paragraphs)
@@ -59,7 +59,7 @@ def test_split_respects_limit_without_cutting_paragraphs() -> None:
 
 def test_split_wraps_giant_paragraphs_by_lines() -> None:
     giant = "\n".join(f"linea {i}" for i in range(600))
-    chunks = list(_split(giant, 500))
+    chunks = list(split_text(giant, 500))
     assert all(len(chunk) <= 500 for chunk in chunks)
     assert "linea 599" in chunks[-1]
 

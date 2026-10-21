@@ -29,7 +29,7 @@ declares terminada una tarea que no hayas ejecutado.
 | Módulo          | Responsabilidad                                                                                 |
 | --------------- | ----------------------------------------------------------------------------------------------- |
 | `cli.py`        | Comandos Typer, orquestación y errores de Ollama. Sin lógica de dominio.                        |
-| `indexer.py`    | Extrae chunks de paquetes instalados (introspección con `inspect`).                             |
+| `indexer.py`    | Extrae chunks de paquetes instalados (`inspect`), por secciones sin truncar.                    |
 | `docs.py`       | Lee `.txt`/`.md`/`.rst` (sueltos, carpetas, `.zip`) y los trocea por secciones.                 |
 | `store.py`      | SQLite + `sqlite-vec` + FTS5 + metadatos (`meta`, `sources`); valida modelo y dimensión.        |
 | `consultor.py`  | RAG: `retrieve()` (nombres + FTS5 + vectorial, fusión RRF) y `stream()`.                        |
@@ -108,8 +108,8 @@ la recuperación.
 
 1. ~~Evaluación: Recall@k y MRR~~ (hecho: `api eval` y `tests/test_benchmark.py`).
 2. ~~Integridad del índice~~ (hecho: metadatos, validación, versiones y `api update`).
-3. Chunking estructural de APIs sin truncado por caracteres. (Los nombres simples como
-   `Path` o `rglob` ya se detectan con la recuperación híbrida.)
+3. ~~Chunking estructural de APIs sin truncado~~ (hecho: `doc_parts` en `indexer.py`).
+   Los nombres simples como `Path` o `rglob` ya se detectan con la recuperación híbrida.
 4. ~~Candidatos ampliados y fusión RRF~~ (hecho). Pendiente: deduplicación por símbolo
    y umbral de relevancia.
 5. Citas verificables (`[DOC-01]`) con comprobación de que existen en el contexto.

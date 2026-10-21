@@ -24,6 +24,11 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Cambiado
 
+- Los docstrings largos de las APIs ya no se truncan a 2000 caracteres: se reparten en
+  varios fragmentos respetando las secciones (`Parameters`, `Returns`, `Examples`…) y
+  los párrafos. Las continuaciones se etiquetan `nombre [2]` y repiten la firma. Hay que
+  reindexar los paquetes (`api index <paquete>`) para beneficiarse.
+
 - La versión de un paquete se resuelve por su distribución instalada (`yaml` → PyYAML),
   no por el nombre del módulo; la biblioteca estándar usa la versión de Python.
 - `Consultor.retrieve()` acepta un límite opcional `k` (por defecto, `retrieval_k`).

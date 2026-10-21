@@ -66,7 +66,7 @@ def collect(docs_dir: Path) -> dict[str, Files]:
     return sources
 
 
-def _sections(text: str) -> Iterator[tuple[str, str]]:
+def sections(text: str) -> Iterator[tuple[str, str]]:
     """Divide un texto en (título, cuerpo) usando sus encabezados."""
     lines = text.splitlines()
     title: str = ""
@@ -110,7 +110,7 @@ def _wrap(paragraph: str, limit: int) -> Iterator[str]:
     yield paragraph
 
 
-def _split(body: str, limit: int) -> Iterator[str]:
+def split_text(body: str, limit: int) -> Iterator[str]:
     """Agrupa párrafos hasta `limit` caracteres sin cortarlos."""
     buffer: list[str] = []
     size = 0
@@ -139,9 +139,9 @@ def extract_doc_chunks(
         if any(fnmatch(relpath, pattern) for pattern in exclude):
             continue
         counts: Counter[str] = Counter()
-        for title, body in _sections(text):
+        for title, body in sections(text):
             base = f"{relpath}#{title}" if title else relpath
-            for part in _split(body, CHUNK_CHARS):
+            for part in split_text(body, CHUNK_CHARS):
                 counts[base] += (
                     1  # etiquetas únicas: títulos repetidos o secciones largas
                 )
