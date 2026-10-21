@@ -140,4 +140,5 @@ la recuperación.
      carpeta del usuario, formato de índice 4 (rutas relativas + raíz), `--python`,
      `--relocate`.
 10. Repositorio PyPi
-11. CI de Github (windows, linux, publicación en pypi) y dependabot
+11. ~~CI de Github (windows, linux, publicación en pypi) y dependabot~~ (hecho:
+    `.github/`; la primera publicación requiere configurar el publicador en PyPI).

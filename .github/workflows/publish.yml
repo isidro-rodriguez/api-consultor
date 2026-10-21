@@ -1,0 +1,35 @@
+name: Publicar en PyPI
+
+# Se publica al subir una etiqueta de versión (v0.2.0, ...): git tag v0.2.0 && git push --tags
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Publicar
+    needs: ci
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/api-consultor/
+    permissions:
+      id-token: write # publicación de confianza (OIDC): sin tokens guardados
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - name: La etiqueta coincide con la versión del proyecto
+        run: |
+          version="$(uv version --short)"
+          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "La etiqueta ${GITHUB_REF_NAME} no coincide con la versión ${version}." >&2
+            exit 1
+          fi
+      - run: uv build
+      - uses: pypa/gh-action-pypi-publish@release/v1

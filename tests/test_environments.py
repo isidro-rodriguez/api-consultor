@@ -119,6 +119,7 @@ def test_remote_versions(venv_dir: Path) -> None:
     assert found["no_esta_instalado_xyz"] is None
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="guion con shebang")
 def test_unusable_interpreters_raise_probe_error(tmp_path: Path) -> None:
     with pytest.raises(ProbeError, match="No se pudo ejecutar"):
         remote_versions(str(tmp_path / "no-python"), ["json"])

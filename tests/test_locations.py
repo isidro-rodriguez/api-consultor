@@ -76,7 +76,13 @@ def test_v3_index_is_migrated_to_relative_paths(v3_index: Path, tmp_path: Path) 
         assert store.meta()["format_version"] == "4"
     site = str(tmp_path / "venv" / "site-packages")
     notes = str(tmp_path / "docs" / "notas")
-    assert roots == {"pkg": site, "mod": site, "notas": notes, "raro": ""}
+    normalized = {name: Path(root) if root else None for name, root in roots.items()}
+    assert normalized == {
+        "pkg": Path(site),
+        "mod": Path(site),
+        "notas": Path(notes),
+        "raro": None,
+    }
     assert paths["pkg"] == ["pkg/__init__.py"]
     assert paths["mod"] == ["mod.py"]
     assert paths["notas"] == ["a/b.md", "c.md"]

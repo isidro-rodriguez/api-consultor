@@ -1,5 +1,7 @@
 # ApiConsultor
 
+[![CI](https://github.com/isidro-rodriguez/api-consultor/actions/workflows/ci.yml/badge.svg)](https://github.com/isidro-rodriguez/api-consultor/actions/workflows/ci.yml)
+
 Consultor de APIs Python **offline**. Indexa los docstrings de los paquetes instalados
 y ficheros de documentación (`.txt`, `.md`, `.rst`, `.zip`) en una base SQLite local, y
 responde preguntas con un LLM que corre en tu máquina mediante
@@ -156,6 +158,16 @@ uv run pytest
 - **pre-commit:** higiene de ficheros, `uv.lock` al día, `ruff` y `ty`.
 - **pre-push:** `ruff`, `ty` y `pytest` (cobertura mínima del 90 %).
 - Los tests no usan Ollama ni tocan el índice o `docs/` reales.
+- **CI** (GitHub Actions, `.github/workflows/ci.yml`): `ruff`, `ty` y `uv.lock` en Linux;
+  tests con cobertura en Linux y Windows (Python 3.12 y 3.13); y construcción del wheel,
+  instalado en un entorno limpio. Dependabot (`.github/dependabot.yml`) propone cada
+  semana actualizaciones de dependencias (`uv`) y de las acciones.
+- **Publicación** (`publish.yml`): al subir una etiqueta `vX.Y.Z` que coincide con la
+  versión de `pyproject.toml`, se ejecuta el CI y se publica en PyPI con publicación de
+  confianza (sin tokens). Antes de la primera vez, en PyPI: *Publishing → Add a pending
+  publisher* (propietario `isidro-rodriguez`, repositorio `api-consultor`, flujo
+  `publish.yml`, entorno `pypi`), y crea el entorno `pypi` en GitHub (Settings →
+  Environments).
 - Versionado SemVer, commits convencionales y cambios en [CHANGELOG.md](CHANGELOG.md).
   Guía para agentes de código en [AGENTS.md](AGENTS.md).
 

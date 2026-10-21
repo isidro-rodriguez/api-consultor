@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call: # lo reutiliza publish.yml antes de publicar
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Calidad (ruff, ty, lock)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv lock --check
+      - run: uv run --locked ruff check .
+      - run: uv run --locked ruff format --check .
+      - run: uv run --locked ty check
+
+  test:
+    name: Tests (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python }}
+      - run: uv sync --locked
+      # Ollama se simula en los tests; la cobertura mínima (90 %) está en pyproject.
+      - run: uv run --locked pytest
+
+  package:
+    name: Paquete (wheel y sdist)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - run: uv build
+      - name: Instala el wheel en un entorno limpio y lo ejecuta
+        run: uv run --isolated --no-project --with dist/*.whl api --version
+      - name: El Modelfile viaja dentro del wheel
+        run: unzip -l dist/*.whl | grep -q 'api_consultor/Modelfile'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error

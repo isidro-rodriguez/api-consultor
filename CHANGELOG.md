@@ -9,6 +9,10 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Añadido
 
+- CI de GitHub Actions: calidad (`ruff`, `ty`, `uv.lock`), tests en Linux y Windows con
+  Python 3.12 y 3.13, y comprobación del wheel en un entorno limpio. Flujo de
+  publicación en PyPI por etiqueta `vX.Y.Z` (publicación de confianza) y Dependabot
+  semanal para dependencias y acciones.
 - Instalable como herramienta global (`uv tool install`). El `Modelfile` viaja dentro
   del paquete y el nuevo comando `api setup` descarga los modelos y crea `api-consultor`
   (idempotente).
