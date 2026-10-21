@@ -125,8 +125,29 @@ err_console = Console(theme=THEME, highlight=False, stderr=True)
 """Consola de errores y avisos (salida de error)."""
 
 
+_typer_console = rich_utils._get_rich_console  # API privada de Typer
+
+
+def _themed_console(stderr: bool = False) -> Console:
+    """Crea la consola de la ayuda de Typer con los estilos semánticos de `THEME`.
+
+    Args:
+        stderr: Si la consola escribe en la salida de error.
+
+    Returns:
+        La consola de Typer con `THEME` apilado sobre sus estilos.
+    """
+    rich_console = _typer_console(stderr=stderr)
+    rich_console.push_theme(THEME)
+    return rich_console
+
+
 def style_typer_help() -> None:
-    """Aplica la paleta y el ancho máximo a la ayuda que genera Typer."""
+    """Aplica la paleta, el ancho máximo y los estilos del tema a la ayuda de Typer.
+
+    Tras llamarla, los textos de ayuda admiten el markup semántico de `THEME`
+    (`[info]`, `[muted]`, `[warning]`…). Es idempotente.
+    """
     width = min(SETTINGS.console_width, shutil.get_terminal_size().columns)
     rich_utils.MAX_WIDTH = width
     styles = {
@@ -145,6 +166,7 @@ def style_typer_help() -> None:
     }
     for name, style in styles.items():
         setattr(rich_utils, name, style)  # constantes tipadas como Literal en Typer
+    setattr(rich_utils, "_get_rich_console", _themed_console)  # noqa: B010 (ty: funciones nominales)
 
 
 def _fit(renderable: RenderableType) -> RenderableType:

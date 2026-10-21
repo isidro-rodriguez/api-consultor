@@ -76,6 +76,7 @@ app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
     pretty_exceptions_show_locals=False,
+    rich_markup_mode="rich",
 )
 """Aplicación Typer; la ayuda de cada comando es su docstring (una línea)."""
 

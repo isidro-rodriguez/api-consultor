@@ -5,6 +5,13 @@ Todos los cambios relevantes de este proyecto se documentan aquí.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el
 proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
+## [Sin publicar]
+
+### Añadido
+
+- Los textos de ayuda de Typer (`help=` de opciones y argumentos) admiten el markup
+  semántico del tema (`[info]`, `[muted]`, `[warning]`…).
+
 ## [0.2.0] - 2026-10-21
 
 ### Añadido

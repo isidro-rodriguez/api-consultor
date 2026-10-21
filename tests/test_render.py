@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pytest
 from rich.console import Console
+from rich.style import Style
+from typer import rich_utils
 
 from api_consultor import render
 from api_consultor.citations import Citations
@@ -197,3 +199,16 @@ def test_data_that_looks_like_markup_is_printed_literally(capture: Capture) -> N
     assert "[/bold]" in text
     assert "[red]pkg" in text
     assert "[/y]" in text
+
+
+def test_typer_help_console_knows_theme_styles() -> None:
+    render.style_typer_help()
+    help_console = rich_utils._get_rich_console()
+    assert help_console.get_style("info") == Style.parse(render.BLUE)
+    assert help_console.get_style("option") == Style.parse(rich_utils.STYLE_OPTION)
+
+
+def test_style_typer_help_is_idempotent() -> None:
+    render.style_typer_help()
+    render.style_typer_help()
+    assert rich_utils._get_rich_console is render._themed_console
