@@ -85,9 +85,14 @@ def test_errors_and_warnings_include_hint(capture: Capture) -> None:
     render.print_error("Algo falló", "Prueba esto")
     render.print_warning("Cuidado")
     text = buffer.getvalue()
-    assert "✖ Algo falló" in text
-    assert "Prueba esto" in text
-    assert "! Cuidado" in text
+    assert "─ Error ─" in text
+    assert "─ Aviso ─" in text
+    assert "│ Algo falló" in text
+    assert "│ Cuidado" in text
+    lines = text.splitlines()
+    error = next(i for i, line in enumerate(lines) if "Algo falló" in line)
+    assert lines[error + 1].strip("│ ") == ""  # línea en blanco antes de la pista
+    assert "Prueba esto" in lines[error + 2]
 
 
 def test_show_version_renders_banner_version_and_details(capture: Capture) -> None:
@@ -220,3 +225,22 @@ def test_typer_help_paragraphs_are_reflowed() -> None:
         ["Una línea\n  partida.", "Otro\npárrafo."], "rich"
     )
     assert text == "Una línea partida.\n\nOtro párrafo."
+
+
+def test_status_table_shows_abbreviated_environments(
+    capture: Capture, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    venv = tmp_path / "web" / ".venv" / "bin" / "python"
+    statuses = [
+        VersionStatus(SourceInfo("json", "3.13", 1, "stdlib"), "3.13", "ok"),
+        VersionStatus(SourceInfo("requests", "2", 1, python=str(venv)), "2", "ok"),
+        VersionStatus(SourceInfo("ajeno", "1", 1, python="/opt/py"), "1", "ok"),
+        VersionStatus(SourceInfo("notas", "", 1, "docs"), None, "docs"),
+    ]
+    buffer = capture(120)
+    render.show_status_table(statuses, "Fuentes", environment=True)
+    text = buffer.getvalue()
+    assert "herramienta" in text
+    assert "~/web/.venv" in text
+    assert str(Path("/opt/py")) in text

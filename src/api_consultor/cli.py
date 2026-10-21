@@ -22,7 +22,7 @@ from . import __version__
 from .citations import check_citations
 from .config import SETTINGS
 from .consultor import Consultor, format_context
-from .docs import Files, collect, extract_doc_chunks, import_docs, materialize
+from .docs import Files, collect, extract_doc_chunks, materialize
 from .evaluation import DEFAULT_KS, evaluate, load_cases, missing_sources
 from .external import (
     ProbeError,
@@ -74,6 +74,7 @@ app = typer.Typer(
     name="api",
     help="Consultor de APIs Python offline con Ollama y RAG.",
     no_args_is_help=True,
+    context_settings={"help_option_names": ["-h", "--help"]},
     add_completion=False,
     pretty_exceptions_show_locals=False,
     rich_markup_mode="rich",
@@ -261,7 +262,7 @@ def index_command(
         bool,
         typer.Option(
             "--stdlib",
-            help="Indexa toda la biblioteca estándar de Python (≈200 módulos).",
+            help="Indexa la biblioteca estándar de Python. [muted](≈200 módulos)[/]",
         ),
     ] = False,
     python: Annotated[
@@ -270,8 +271,7 @@ def index_command(
             "--python",
             "-p",
             metavar="ENTORNO",
-            help="Entorno virtual (o su Python) donde están instalados; "
-            "por defecto, el de la herramienta.",
+            help="Entorno virtual donde están instalados los paquetes.",
             show_default=False,
         ),
     ] = None,
@@ -337,8 +337,7 @@ def index_docs_command(
             metavar="DIRECTORIO",
             exists=True,
             file_okay=False,
-            help="Carpeta con .txt, .md, .rst o .zip (por defecto, la de documentación "
-            "del usuario).",
+            help="Carpeta con documentación en txt, md, rst o zip.",
             show_default=False,
         ),
     ] = None,
@@ -348,16 +347,7 @@ def index_docs_command(
             "--exclude",
             "-x",
             metavar="PATRÓN",
-            help="Patrón fnmatch de ruta a omitir (repetible), p. ej. 'whatsnew/*'.",
-        ),
-    ] = None,
-    copy: Annotated[
-        bool | None,
-        typer.Option(
-            "--copy/--no-copy",
-            help="Copiar (o no) la documentación a la carpeta del usuario sin "
-            "preguntar.",
-            show_default=False,
+            help="Patrón fnmatch de ruta a omitir. [muted](ej. 'whatsnew/*')[/].",
         ),
     ] = None,
 ) -> None:
@@ -365,9 +355,8 @@ def index_docs_command(
 
     Cada carpeta o .zip del directorio es una fuente y los ficheros sueltos forman la
     fuente «docs»; el texto se trocea por secciones y cada fragmento guarda su enlace.
-    Los .zip se extraen a [muted]docs-cache/[/]. Si el directorio está fuera de la
-    carpeta de documentación del usuario, ofrece copiarlo allí para no perderlo al
-    mover o borrar el original.
+    Los .zip se extraen a [muted]docs-cache/[/]. Sin directorio, usa la carpeta de
+    documentación del usuario.
     """
     directory = directory or SETTINGS.docs_dir
     if not directory.is_dir():
@@ -375,7 +364,6 @@ def index_docs_command(
             f"No existe la carpeta de documentación: {directory}.",
             "Copia ahí tu documentación o indica otra: `api index-docs <carpeta>`.",
         )
-    directory = _offer_copy(directory, copy=copy)
     results: list[SourceInfo] = []
     with _store() as store, progress_bar() as progress, _handled_errors():
         for source, files in collect(directory).items():
@@ -383,29 +371,6 @@ def index_docs_command(
             if info := _index_source(store, progress, source, build, "docs"):
                 results.append(info)
     show_sources_table(results, "Indexado")
-
-
-def _offer_copy(directory: Path, *, copy: bool | None) -> Path:
-    """Ofrece copiar la documentación a la carpeta del usuario y devuelve la efectiva.
-
-    Allí no se pierde si se mueve o borra el original. No pregunta si ya está dentro
-    de esa carpeta (o la contiene).
-    """
-    target = SETTINGS.docs_dir
-    source, home = directory.resolve(), target.resolve()
-    if source == home or source.is_relative_to(home) or home.is_relative_to(source):
-        return directory
-    if copy is None:
-        copy = typer.confirm(
-            f"¿Copiar la documentación a {target} para conservarla aunque muevas "
-            "o borres el original?",
-            default=True,
-        )
-    if not copy:
-        return directory
-    copied = import_docs(directory, target)
-    print_hint(f"Copiados {copied} elementos a {target}.")
-    return target
 
 
 def _read_questions() -> Iterator[str]:
@@ -429,7 +394,7 @@ def _warn_stale(store: Store) -> frozenset[str]:
         )
         print_warning(
             f"Documentación posiblemente obsoleta: {details}.",
-            "Reindexa con `api update`.",
+            "Reindexa con `api sources --update`.",
         )
     return frozenset(s.source.package for s in stale)
 
@@ -532,51 +497,81 @@ def sources_command(
             show_default=False,
         ),
     ] = None,
-    yes: Annotated[
-        bool, typer.Option("--yes", "-y", help="Eliminar sin pedir confirmación.")
-    ] = False,
-    show_all: Annotated[
-        bool,
-        typer.Option(
-            "--all", "-a", help="Muestra cada módulo de la biblioteca estándar."
-        ),
-    ] = False,
     relocate: Annotated[
         tuple[str, Path] | None,
         typer.Option(
             "--relocate",
-            metavar="FUENTE CARPETA",
-            help="Indica la nueva carpeta de una fuente movida, sin reindexar.",
+            metavar="DIRECTORIO",
+            help="Indica nuevo directorio de la fuente. [muted](no reindexa)[/]",
             show_default=False,
         ),
     ] = None,
+    update: Annotated[
+        bool,
+        typer.Option(
+            "--update",
+            "-u",
+            help="Reindexa los paquetes que han cambiado de versión.",
+        ),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Muestra cada módulo y el entorno donde se indexó.",
+        ),
+    ] = False,
 ) -> None:
     """Administra las fuentes indexadas.
 
     Sin opciones, lista cada fuente con su versión indexada e instalada, fragmentos y
     estado (al día, obsoleta o no encontrada); los módulos de la biblioteca estándar se
-    agrupan en una fila. También elimina fuentes ([info]--remove stdlib[/] las borra
-    todas) o recoloca una cuya carpeta se ha movido.
+    agrupan en una fila por intérprete. También elimina fuentes ([info]--remove
+    stdlib[/] las borra todas), recoloca una cuya carpeta se ha movido o reindexa las
+    obsoletas ([info]--update[/]). Eliminar y reindexar piden confirmación.
     """
-    with _store(check_model=False) as store:
+    with _store(check_model=update) as store:
         if remove is not None:
-            _remove_sources(store, remove, yes=yes)
+            _remove_sources(store, remove)
         if relocate is not None:
             _relocate_source(store, *relocate)
+        if update:
+            _update_sources(store)
         statuses = check_versions(store.sources())
         meta = store.meta()
     if not statuses:
         print_hint("Nada indexado todavía.")
         return
-    shown = statuses if show_all else collapse_stdlib(statuses)
+    shown = statuses if verbose else collapse_stdlib(statuses)
     caption = (
         f"Embeddings: {meta.get('embed_model', 'sin registrar')} · "
         f"{meta.get('embed_dim', '?')} dimensiones · "
         f"formato {meta.get('format_version', '?')}"
     )
-    if len(shown) < len(statuses):
-        caption += " · `--all` muestra cada módulo estándar"
-    show_status_table(shown, "Fuentes indexadas", caption)
+    if not verbose:
+        caption += " · `--verbose` muestra cada módulo y su entorno"
+    show_status_table(shown, "Fuentes indexadas", caption, environment=verbose)
+
+
+def _update_sources(store: Store) -> None:
+    """Reindexa, tras confirmar, las fuentes cuya versión instalada ha cambiado."""
+    stale = [s for s in check_versions(store.sources()) if s.is_stale]
+    if not stale:
+        print_hint("Todas las fuentes están al día.")
+        return
+    show_status_table(collapse_stdlib(stale), "Fuentes obsoletas")
+    if not typer.confirm("¿Reindexarlas ahora?"):
+        raise typer.Exit(code=1)
+    results: list[SourceInfo] = []
+    for python, kind in dict.fromkeys((s.source.python, s.source.kind) for s in stale):
+        names = [
+            s.source.package
+            for s in stale
+            if (s.source.python, s.source.kind) == (python, kind)
+        ]
+        results += _index_packages(store, names, python, kind)
+    show_sources_table(results, "Reindexado")
 
 
 def _relocate_source(store: Store, name: str, folder: Path) -> None:
@@ -597,7 +592,7 @@ def _relocate_source(store: Store, name: str, folder: Path) -> None:
     print_hint(f"{name} ahora apunta a {root} ({found} de {len(paths)} ficheros).")
 
 
-def _remove_sources(store: Store, names: list[str], *, yes: bool) -> None:
+def _remove_sources(store: Store, names: list[str]) -> None:
     """Elimina `names` del índice; no toca nada si alguna no existe."""
     known = {source.package: source for source in store.sources()}
     if "stdlib" in names and "stdlib" not in known:  # alias de todos los módulos
@@ -613,7 +608,7 @@ def _remove_sources(store: Store, names: list[str], *, yes: bool) -> None:
             f"Disponibles: {', '.join(known) or 'ninguna'}.",
         )
         raise typer.Exit(code=1)
-    if not yes and not typer.confirm(
+    if not typer.confirm(
         f"¿Eliminar {', '.join(names)} del índice? Se borrarán "
         f"{sum(known[name].chunks for name in names)} fragmentos."
     ):
@@ -710,43 +705,6 @@ def config_command(ctx: typer.Context) -> None:
 
 
 @app.command(
-    name="update",
-    short_help="Reindexa los paquetes cuya versión instalada difiere de la indexada.",
-)
-def update_command(
-    yes: Annotated[
-        bool, typer.Option("--yes", "-y", help="Reindexar sin pedir confirmación.")
-    ] = False,
-) -> None:
-    """Reindexa los paquetes cuya versión instalada difiere de la indexada.
-
-    Compara cada fuente con la versión instalada en el entorno donde se indexó (el de
-    la herramienta o el de [info]--python[/]) y, tras confirmar, reindexa las
-    obsoletas. La documentación local no se comprueba: reindéxala con
-    [info]api index-docs[/].
-    """
-    with _store() as store:
-        stale = [s for s in check_versions(store.sources()) if s.is_stale]
-        if not stale:
-            print_hint("Todas las fuentes están al día.")
-            return
-        show_status_table(collapse_stdlib(stale), "Fuentes obsoletas")
-        if not yes and not typer.confirm("¿Reindexarlas ahora?"):
-            raise typer.Exit(code=1)
-        results: list[SourceInfo] = []
-        for python, kind in dict.fromkeys(
-            (s.source.python, s.source.kind) for s in stale
-        ):
-            names = [
-                s.source.package
-                for s in stale
-                if (s.source.python, s.source.kind) == (python, kind)
-            ]
-            results += _index_packages(store, names, python, kind)
-    show_sources_table(results, "Reindexado")
-
-
-@app.command(
     name="eval",
     short_help="Mide Recall@k y MRR de la recuperación con casos de referencia.",
 )
@@ -762,7 +720,7 @@ def eval_command(
     ],
     k: Annotated[
         int,
-        typer.Option("--k", "-k", min=1, help="Fragmentos recuperados por pregunta."),
+        typer.Option("-k", min=1, help="Fragmentos recuperados por pregunta."),
     ] = 10,
     verbose: Annotated[
         bool,

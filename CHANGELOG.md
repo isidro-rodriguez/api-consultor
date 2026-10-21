@@ -5,16 +5,39 @@ Todos los cambios relevantes de este proyecto se documentan aquí.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el
 proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
-## [Sin publicar]
+## [0.3.0] - 2026-10-21
 
 ### Añadido
 
-- Los textos de ayuda de Typer (`help=` de opciones y argumentos) admiten el markup
-  semántico del tema (`[info]`, `[muted]`, `[warning]`…).
+- `api sources --verbose` (`-v`) muestra, además de cada módulo de la biblioteca
+  estándar, el entorno donde se indexó cada paquete.
 - El `--help` de cada comando muestra un párrafo con más detalle; el listado de
   `api --help` mantiene una línea por comando.
 - La ayuda y los avisos de uso de Typer salen en español (uso, paneles, `--help`,
-  valores por defecto, obligatorio).
+  valores por defecto, obligatorio) y admiten el markup semántico del tema
+  (`[info]`, `[muted]`, `[warning]`…).
+- `-h` como alias de `--help`.
+
+### Cambiado
+
+- `api update` pasa a ser `api sources --update` (`-u`).
+- `api sources --all` pasa a ser `--verbose` (`-v`).
+- `api --version` usa `-v` (antes `-V`) y `api eval` solo admite `-k` (antes también
+  `--k`).
+- `api index-docs` indexa la carpeta indicada en su sitio, sin ofrecer copiarla a la
+  del usuario.
+- Errores y avisos se muestran en paneles «Error» y «Aviso» con el borde del tema
+  (como los errores de uso de Typer), sin símbolos, y la pista va tras una línea en
+  blanco.
+- Las tablas de fuentes justifican las versiones a la derecha y todos los estados
+  llevan símbolo separado del texto (`✔ al día`, `○ no instalada`, `· docs`…).
+- El test de sondas inutilizables ya no depende de un guion con shebang: se ejecuta
+  también en Windows.
+
+### Eliminado
+
+- `api index-docs --copy` / `--no-copy`.
+- `api sources --yes` (`-y`): eliminar o reindexar fuentes siempre pide confirmación.
 
 ## [0.2.0] - 2026-10-21
 

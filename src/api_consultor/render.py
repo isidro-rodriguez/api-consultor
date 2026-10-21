@@ -164,11 +164,17 @@ def _join_lines(paragraphs: Sequence[str], markup_mode: str) -> str:
     return "\n\n".join(" ".join(paragraph.split()) for paragraph in paragraphs)
 
 
+ERROR_TITLE = "Error"
+"""Título del panel de errores (el mismo para los de Typer y los propios)."""
+
+WARNING_TITLE = "Aviso"
+"""Título del panel de avisos."""
+
 TYPER_TEXTS = {
     "ARGUMENTS_PANEL_TITLE": "Argumentos",
     "OPTIONS_PANEL_TITLE": "Opciones",
     "COMMANDS_PANEL_TITLE": "Comandos",
-    "ERRORS_PANEL_TITLE": "Error",
+    "ERRORS_PANEL_TITLE": ERROR_TITLE,
     "DEFAULT_STRING": "[por defecto: {}]",
     "ENVVAR_STRING": "[variable de entorno: {}]",
     "REQUIRED_LONG_STRING": "[obligatorio]",
@@ -244,7 +250,7 @@ def style_typer_help() -> None:
         "STYLE_COMMANDS_TABLE_FIRST_COLUMN": f"bold {GREEN}",
         "STYLE_OPTIONS_PANEL_BORDER": COMMENT,
         "STYLE_COMMANDS_PANEL_BORDER": COMMENT,
-        "STYLE_ERRORS_PANEL_BORDER": RED,
+        "STYLE_ERRORS_PANEL_BORDER": "error",
         "STYLE_ERRORS_SUGGESTION": f"italic {COMMENT}",
         "STYLE_REQUIRED_SHORT": RED,
         "STYLE_REQUIRED_LONG": f"dim {RED}",
@@ -269,32 +275,45 @@ def _markdown(text: str) -> RenderableType:
 # --- Mensajes -----------------------------------------------------------------
 
 
-def _message(
-    target: Console, symbol: str, style: str, text: str, hint: str | None
-) -> None:
-    target.print(_fit(Text.assemble((f"{symbol} ", style), text)))
+def _panel(title: str, style: str, message: str, hint: str | None) -> None:
+    """Imprime un mensaje en un panel con borde del tema en la salida de error.
+
+    Args:
+        title: Título del panel, a la izquierda.
+        style: Estilo del tema para el borde.
+        message: Qué ocurre.
+        hint: Qué hacer al respecto, tras una línea en blanco y atenuado.
+    """
+    body = Text(message)
     if hint is not None:
-        target.print(_fit(Text(f"  {hint}", style="muted")))
+        body.append("\n\n").append(hint, style="muted")
+    panel = Panel(
+        body, title=title, title_align="left", border_style=style, box=box.ROUNDED
+    )
+    err_console.print(_fit(panel))
 
 
 def print_error(message: str, hint: str | None = None) -> None:
-    """Imprime un error en la salida de error.
+    """Imprime un error en un panel «Error» en la salida de error.
+
+    Usa el mismo aspecto que los errores de uso de Typer: borde con el estilo
+    `error` y título a la izquierda.
 
     Args:
         message: Qué ha fallado.
-        hint: Cómo solucionarlo, en una línea aparte y atenuada.
+        hint: Cómo solucionarlo, tras una línea en blanco y atenuado.
     """
-    _message(err_console, "✖", "error", message, hint)
+    _panel(ERROR_TITLE, "error", message, hint)
 
 
 def print_warning(message: str, hint: str | None = None) -> None:
-    """Imprime un aviso en la salida de error.
+    """Imprime un aviso en un panel «Aviso» en la salida de error.
 
     Args:
         message: Qué ocurre.
-        hint: Qué hacer al respecto, en una línea aparte y atenuada.
+        hint: Qué hacer al respecto, tras una línea en blanco y atenuado.
     """
-    _message(err_console, "!", "warning", message, hint)
+    _panel(WARNING_TITLE, "warning", message, hint)
 
 
 def print_hint(message: str) -> None:
@@ -548,7 +567,7 @@ def show_sources_table(sources: Sequence[SourceInfo], title: str) -> None:
         header_style=f"bold {FG}",
     )
     table.add_column("Fuente", style="info")
-    table.add_column("Versión", style="muted")
+    table.add_column("Versión", justify="right", style="muted", no_wrap=True)
     table.add_column("Fragmentos", justify="right", style="success")
     for source in sources:
         table.add_row(Text(source.package), Text(source.version), f"{source.chunks:,}")
@@ -685,17 +704,44 @@ def show_version(version: str, details: Sequence[tuple[str, str]]) -> None:
 
 
 _STATE_LABELS = {
-    "ok": ("✔ al día", "success"),
-    "stale": ("⚠ obsoleta", "warning"),
-    "missing": ("no instalada", "muted"),
-    "unknown": ("? sin versión", "muted"),
-    "docs": ("docs", "muted"),
-    "gone": ("✘ no encontrada", "error"),
+    "ok": ("✔", "al día", "success"),
+    "stale": ("⚠", "obsoleta", "warning"),
+    "missing": ("○", "no instalada", "muted"),
+    "unknown": ("?", "sin versión", "muted"),
+    "docs": ("·", "docs", "muted"),
+    "gone": ("✘", "no encontrada", "error"),
 }
+"""Símbolo, texto y estilo de cada estado (todos con símbolo para alinear el texto)."""
+
+
+def _environment(source: SourceInfo) -> str | None:
+    """Entorno donde se indexó un paquete, abreviado para la tabla.
+
+    Muestra la carpeta del venv (no su `bin/python`) con `~` en lugar de la carpeta
+    personal, o «herramienta» si se indexó en el propio entorno.
+    """
+    if source.kind == "docs":
+        return None
+    if not source.python:
+        return "herramienta"
+    python = Path(source.python)
+    folder = (
+        python.parent.parent if python.parent.name in {"bin", "Scripts"} else python
+    )
+    home = Path.home()
+    return (
+        f"~/{folder.relative_to(home).as_posix()}"
+        if folder.is_relative_to(home)
+        else str(folder)
+    )
 
 
 def show_status_table(
-    statuses: Sequence[VersionStatus], title: str, caption: str | None = None
+    statuses: Sequence[VersionStatus],
+    title: str,
+    caption: str | None = None,
+    *,
+    environment: bool = False,
 ) -> None:
     """Muestra las fuentes indexadas con su versión instalada y si están al día.
 
@@ -703,6 +749,7 @@ def show_status_table(
         statuses: Estado de cada fuente.
         title: Título de la tabla.
         caption: Pie de tabla opcional.
+        environment: Añade bajo cada paquete el entorno donde se indexó.
     """
     table = Table(
         title=title,
@@ -711,24 +758,28 @@ def show_status_table(
         caption=caption,
         caption_style="muted",
         caption_justify="left",
+        show_lines=environment,  # el entorno ocupa una segunda línea
         box=box.ROUNDED,
         border_style="muted",
         header_style=f"bold {FG}",
     )
-    table.add_column("Fuente", style="info", no_wrap=True)
-    table.add_column("Indexada", style="muted")
-    table.add_column("Instalada", style=FG)
+    table.add_column("Fuente", style="info", no_wrap=not environment, overflow="fold")
+    table.add_column("Indexada", justify="right", style="muted", no_wrap=True)
+    table.add_column("Instalada", justify="right", style=FG, no_wrap=True)
     table.add_column("Estado", no_wrap=True)
     table.add_column("Fragmentos", justify="right", style="success")
     table.add_column("Fecha", style="muted")
     for entry in statuses:
         source = entry.source
-        label, style = _STATE_LABELS[entry.state]
+        symbol, label, style = _STATE_LABELS[entry.state]
+        name = Text(source.package)
+        if environment and (where := _environment(source)) is not None:
+            name.append(f"\n{where}", style="muted")
         table.add_row(
-            Text(source.package),
-            Text(source.version),
+            name,
+            Text(source.version or "—"),
             Text(entry.installed or "—"),
-            Text(label, style=style),
+            Text(f"{symbol} {label}", style=style),
             f"{source.chunks:,}",
             source.indexed_at[:10] or "—",
         )

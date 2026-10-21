@@ -44,7 +44,7 @@ def test_help_lists_all_commands() -> None:
 
 
 def test_version_flag_shows_panel() -> None:
-    for flag in ("--version", "-V"):
+    for flag in ("--version", "-v"):
         result = runner.invoke(app, [flag])
         assert result.exit_code == 0
         assert f"v{__version__}" in result.output
@@ -180,7 +180,7 @@ def test_ask_warns_about_stale_sources_and_marks_them(stub_ollama: StubOllama) -
     result = runner.invoke(app, ["ask", "json.dumps"])
     assert result.exit_code == 0, result.output
     assert "posiblemente obsoleta" in result.output
-    assert "api update" in result.output
+    assert "api sources --update" in result.output
     assert "⚠ obsoleta" in result.output  # marca en el panel de fuentes
     assert len(stub_ollama.messages) == 1
 
@@ -193,7 +193,7 @@ def test_ask_does_not_warn_when_everything_is_current(stub_ollama: StubOllama) -
 
 def test_update_reindexes_only_stale_packages(stub_ollama: StubOllama) -> None:
     seed_json_index("3.0.0")
-    result = runner.invoke(app, ["update", "--yes"])
+    result = runner.invoke(app, ["sources", "--update"], input="y\n")
     assert result.exit_code == 0, result.output
     assert "Reindexado" in result.output
     after = runner.invoke(app, ["sources"])
@@ -203,16 +203,30 @@ def test_update_reindexes_only_stale_packages(stub_ollama: StubOllama) -> None:
 
 def test_update_asks_for_confirmation(stub_ollama: StubOllama) -> None:
     seed_json_index("3.0.0")
-    result = runner.invoke(app, ["update"], input="n\n")
+    result = runner.invoke(app, ["sources", "-u"], input="n\n")
     assert result.exit_code == 1
     assert "3.0.0" in runner.invoke(app, ["sources"]).output
 
 
+def test_update_command_moved_to_sources() -> None:
+    assert runner.invoke(app, ["update"]).exit_code == 2
+
+
+def test_sources_verbose_shows_environment(stub_ollama: StubOllama) -> None:
+    seed_json_index(platform.python_version())
+    short = runner.invoke(app, ["sources"])
+    assert "herramienta" not in short.output
+    assert "--verbose" in short.output
+    verbose = runner.invoke(app, ["sources", "-v"])
+    assert verbose.exit_code == 0, verbose.output
+    assert "herramienta" in verbose.output
+
+
 def test_update_reports_when_everything_is_current(stub_ollama: StubOllama) -> None:
     seed_json_index(platform.python_version())
-    result = runner.invoke(app, ["update"])
+    result = runner.invoke(app, ["sources", "--update"])
     assert result.exit_code == 0
-    assert "al día" in result.output
+    assert "Todas las fuentes están al día" in result.output
 
 
 def test_a_different_embedding_model_blocks_ask_but_not_sources(
@@ -308,14 +322,16 @@ def test_sources_remove_declined_keeps_the_index(indexed: StubOllama) -> None:
     assert "mis-notas" in runner.invoke(app, ["sources"]).output
 
 
-def test_sources_remove_yes_skips_confirmation(indexed: StubOllama) -> None:
-    result = runner.invoke(app, ["sources", "-r", "mis-notas", "-r", "mis-notas", "-y"])
+def test_sources_remove_asks_once_for_repeated_names(indexed: StubOllama) -> None:
+    result = runner.invoke(
+        app, ["sources", "-r", "mis-notas", "-r", "mis-notas"], input="y\n"
+    )
     assert result.exit_code == 0, result.output
     assert result.output.count("Eliminada mis-notas") == 1
 
 
 def test_sources_remove_unknown_changes_nothing(indexed: StubOllama) -> None:
-    result = runner.invoke(app, ["sources", "-r", "mis-notas", "-r", "fantasma", "-y"])
+    result = runner.invoke(app, ["sources", "-r", "mis-notas", "-r", "fantasma"])
     assert result.exit_code == 1
     assert "fantasma" in result.output
     assert "Disponibles: mis-notas" in result.output
@@ -433,7 +449,8 @@ def test_removing_a_source_deletes_its_extraction(
     runner.invoke(app, ["index-docs"])
     cache = SETTINGS.db_path.parent / "docs-cache" / "manual-1.0"
     assert cache.is_dir()
-    assert runner.invoke(app, ["sources", "-r", "manual-1.0", "-y"]).exit_code == 0
+    removed = runner.invoke(app, ["sources", "-r", "manual-1.0"], input="y\n")
+    assert removed.exit_code == 0
     assert not cache.exists()
 
 

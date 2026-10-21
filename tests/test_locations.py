@@ -126,9 +126,12 @@ def other_docs(isolated_cwd: Path) -> Path:
     return folder.parent
 
 
+BOX_CHARS = str.maketrans(dict.fromkeys("│─╭╮╰╯", " "))
+
+
 def flat(text: str) -> str:
-    """Une las líneas que Rich parte por el ancho de la consola."""
-    return " ".join(text.split())
+    """Une las líneas que Rich parte por el ancho de la consola, sin bordes de panel."""
+    return " ".join(text.translate(BOX_CHARS).split())
 
 
 def source_root() -> str:
@@ -136,46 +139,23 @@ def source_root() -> str:
         return store.sources()[0].root
 
 
-def test_index_docs_offers_to_copy_and_defaults_to_yes(
+def test_index_docs_keeps_the_original_location(
     other_docs: Path, stub_ollama: StubOllama
 ) -> None:
-    result = runner.invoke(app, ["index-docs", str(other_docs)], input="\n")
-    assert result.exit_code == 0, result.output
-    assert "Copiar la documentación" in result.output
-    assert (SETTINGS.docs_dir / "notas" / "os.md").is_file()
-    assert Path(source_root()) == (SETTINGS.docs_dir / "notas").resolve()
-
-
-def test_index_docs_can_keep_the_original_location(
-    other_docs: Path, stub_ollama: StubOllama
-) -> None:
-    result = runner.invoke(app, ["index-docs", str(other_docs)], input="n\n")
+    result = runner.invoke(app, ["index-docs", str(other_docs)])
     assert result.exit_code == 0, result.output
     assert not SETTINGS.docs_dir.exists()
     assert Path(source_root()) == (other_docs / "notas").resolve()
 
 
-def test_copy_flags_skip_the_question(
-    other_docs: Path, stub_ollama: StubOllama
-) -> None:
-    no = runner.invoke(app, ["index-docs", str(other_docs), "--no-copy"])
-    assert no.exit_code == 0
-    assert "Copiar la documentación" not in no.output
-    assert not SETTINGS.docs_dir.exists()
-    yes = runner.invoke(app, ["index-docs", str(other_docs), "--copy"])
-    assert yes.exit_code == 0
-    assert "Copiados 1 elementos" in yes.output
-    assert (SETTINGS.docs_dir / "notas").is_dir()
-
-
-def test_no_question_when_docs_are_already_in_the_user_folder(
+def test_index_docs_defaults_to_the_user_folder(
     isolated_cwd: Path, stub_ollama: StubOllama
 ) -> None:
     (SETTINGS.docs_dir / "notas").mkdir(parents=True)
     (SETTINGS.docs_dir / "notas" / "a.md").write_text("# A\n\ntexto\n", "utf-8")
     result = runner.invoke(app, ["index-docs"])
     assert result.exit_code == 0, result.output
-    assert "Copiar" not in result.output
+    assert Path(source_root()) == (SETTINGS.docs_dir / "notas").resolve()
 
 
 def test_missing_default_folder_explains_where_to_put_the_docs(
@@ -188,7 +168,7 @@ def test_missing_default_folder_explains_where_to_put_the_docs(
 
 @pytest.fixture
 def notes_index(other_docs: Path, stub_ollama: StubOllama) -> Path:
-    runner.invoke(app, ["index-docs", str(other_docs), "--no-copy"])
+    runner.invoke(app, ["index-docs", str(other_docs)])
     return other_docs / "notas"
 
 

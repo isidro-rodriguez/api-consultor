@@ -119,15 +119,17 @@ def test_remote_versions(venv_dir: Path) -> None:
     assert found["no_esta_instalado_xyz"] is None
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="guion con shebang")
-def test_unusable_interpreters_raise_probe_error(tmp_path: Path) -> None:
+def test_unusable_interpreters_raise_probe_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     with pytest.raises(ProbeError, match="No se pudo ejecutar"):
         remote_versions(str(tmp_path / "no-python"), ["json"])
-    broken = tmp_path / "falso.py"
-    broken.write_text("#!/bin/sh\necho no-json\n", encoding="utf-8")
-    broken.chmod(0o755)
+    # Una sonda que no responde JSON (portable: sin guiones con shebang).
+    broken = tmp_path / "falsa_sonda.py"
+    broken.write_text("print('no-json')\n", encoding="utf-8")
+    monkeypatch.setattr(external, "PROBE", broken)
     with pytest.raises(ProbeError, match="no respondió"):
-        remote_versions(str(broken), ["json"])
+        remote_versions(sys.executable, ["json"])
 
 
 def test_probe_rejects_old_python(
@@ -260,7 +262,7 @@ def test_update_reindexes_in_the_original_environment(
             python=python,
         )
     assert "obsoleta" in runner.invoke(app, ["sources"]).output
-    result = runner.invoke(app, ["update", "--yes"])
+    result = runner.invoke(app, ["sources", "--update"], input="y\n")
     assert result.exit_code == 0, result.output
     with Store(SETTINGS.db_path, EMBED_DIM) as store:
         [source] = store.sources()

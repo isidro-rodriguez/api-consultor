@@ -51,27 +51,26 @@ uv run api index requests -p .venv      # ... o de un entorno virtual de tu proy
 uv run api index --stdlib               # toda la biblioteca estándar (≈200 módulos)
 uv run api index --stdlib -p <python>   # la de otra versión de Python
 uv run api index-docs                   # documentación del usuario (zip, carpetas, ficheros)
-uv run api index-docs ~/mis-docs        # otra carpeta (ofrece copiarla a la del usuario)
+uv run api index-docs ~/mis-docs        # otra carpeta
 uv run api index-docs -x 'whatsnew/*'   # omitiendo rutas (patrones fnmatch)
 uv run api ask "¿cómo hago un POST con timeout?"
 uv run api ask                          # modo interactivo
 uv run api ask --debug "..."            # muestra candidatos, señales y distancias
-uv run api sources                      # qué hay indexado (stdlib resumida; --all la expande)
+uv run api sources                      # qué hay indexado (stdlib resumida)
+uv run api sources -v                   # cada módulo y el entorno donde se indexó
 uv run api sources --remove requests   # elimina una fuente del índice
 uv run api sources --relocate notas D:/docs/notas  # una fuente movida de sitio
-uv run api update                       # reindexa los paquetes que han cambiado de versión
+uv run api sources --update             # reindexa los paquetes que han cambiado de versión
 uv run api eval evals/stdlib.toml       # mide la calidad de la recuperación
 uv run api --version
 ```
 
 - Un paquete solo se puede indexar si está instalado en el entorno que se indica con
   `--python` (carpeta del venv o su Python); sin él, en el de la propia herramienta. Cada
-  fuente recuerda su entorno: `api update` y el aviso de versión obsoleta lo usan.
-- La documentación local vive por defecto en `<carpeta de datos>/docs`. Al indexar otra
-  carpeta, `api index-docs` pregunta si copiarla allí (por defecto sí; `--copy` /
-  `--no-copy` evitan la pregunta), de modo que no se pierde si mueves o borras el
-  original. Admite, por ejemplo, el zip de texto de la documentación de Python
-  (<https://docs.python.org/3/download.html>).
+  fuente recuerda su entorno: `api sources --update` y el aviso de versión obsoleta lo usan.
+- La documentación local vive por defecto en `<carpeta de datos>/docs`; `api index-docs`
+  también indexa otra carpeta en su sitio. Admite, por ejemplo, el zip de texto de la
+  documentación de Python (<https://docs.python.org/3/download.html>).
 - La base de datos vive en la carpeta de datos del usuario (`api config` muestra su ruta),
   no en el proyecto: `%LOCALAPPDATA%\\api-consultor` (Windows), `~/.local/share/api-consultor`
   (Linux) o `~/Library/Application Support/api-consultor` (macOS). Cámbiala con
@@ -79,7 +78,7 @@ uv run api --version
 - El índice guarda las rutas de los ficheros relativas a la raíz de cada fuente. Si
   borras un venv o mueves una carpeta, `api sources` marca la fuente como «no encontrada»,
   el panel de `api ask` indica «fichero no disponible» (sin enlace) y
-  `api sources --relocate FUENTE CARPETA` la recoloca sin reindexar.
+  `api sources --relocate FUENTE DIRECTORIO` la recoloca sin reindexar.
 
 ## Integridad del índice
 
@@ -92,7 +91,7 @@ formato y, por fuente, su tipo, versión y fecha de indexado.
   citados con ✔ y avisa si el modelo cita ids inexistentes o no cita nada. Tras
   actualizar el `Modelfile`, recrea el modelo con `api setup`.
 - Al preguntar, avisa si un paquete indexado ya no coincide con la versión instalada y
-  marca esas fuentes en el panel de resultados. `api update` reindexa solo esas.
+  marca esas fuentes en el panel de resultados. `api sources --update` reindexa solo esas.
 - La versión se resuelve por la distribución instalada (`yaml` → PyYAML) y, para la
   biblioteca estándar, es la de Python. La documentación no se compara (solo se comprueba que su carpeta exista).
 - Un índice anterior se migra solo al abrirlo; se asume creado con el modelo configurado.

@@ -81,8 +81,8 @@ def test_sources_summarises_the_stdlib_unless_asked(
     short = flat(runner.invoke(app, ["sources"]).output)
     assert "stdlib (2 módulos)" in short
     assert "shutil" not in short
-    assert "--all" in short
-    full = flat(runner.invoke(app, ["sources", "--all"]).output)
+    assert "--verbose" in short
+    full = flat(runner.invoke(app, ["sources", "--verbose"]).output)
     assert "shutil" in full
     assert "stdlib (" not in full
 
@@ -91,7 +91,7 @@ def test_remove_stdlib_alias_removes_every_module(
     two_modules: list[str], stub_ollama: StubOllama
 ) -> None:
     runner.invoke(app, ["index", "--stdlib"])
-    result = runner.invoke(app, ["sources", "-r", "stdlib", "-y"])
+    result = runner.invoke(app, ["sources", "-r", "stdlib"], input="y\n")
     assert result.exit_code == 0, result.output
     assert not sources()
 
@@ -104,7 +104,7 @@ def test_update_keeps_the_stdlib_kind(stub_ollama: StubOllama) -> None:
             [[1.0] + [0.0] * (EMBED_DIM - 1)],
             kind="stdlib",
         )
-    result = runner.invoke(app, ["update", "--yes"])
+    result = runner.invoke(app, ["sources", "--update"], input="y\n")
     assert result.exit_code == 0, result.output
     [source] = sources()
     assert (source.package, source.kind) == ("json", "stdlib")
