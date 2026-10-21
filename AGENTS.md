@@ -26,17 +26,18 @@ declares terminada una tarea que no hayas ejecutado.
 
 ## Mapa del código (`src/api_consultor/`)
 
-| Módulo          | Responsabilidad                                                                                      |
-| --------------- | ---------------------------------------------------------------------------------------------------- |
-| `cli.py`        | Comandos Typer, orquestación y errores de Ollama. Sin lógica de dominio.                             |
-| `indexer.py`    | Extrae chunks de paquetes instalados (introspección con `inspect`).                                  |
-| `docs.py`       | Lee `.txt`/`.md`/`.rst` (sueltos, carpetas, `.zip`) y los trocea por secciones.                      |
-| `store.py`      | SQLite + `sqlite-vec` + FTS5 + metadatos (`meta`, `sources`); valida modelo y dimensión.             |
-| `versions.py`   | Versión instalada (distribución ≠ módulo) y estado de cada fuente indexada.                          |
-| `evaluation.py` | Recall@k, MRR y carga de casos de `api eval`.                                                        |
-| `llm.py`        | Capa fina sobre el cliente de Ollama (`embed`, `stream_chat`).                                       |
-| `render.py`     | Toda la salida de consola: tema Monokai, Markdown, tablas, versión.                                  |
-| `config.py`     | `Settings` inmutable (modelos, rutas, `top_k`, ancho de consola).                                    |
+| Módulo          | Responsabilidad                                                                                 |
+| --------------- | ----------------------------------------------------------------------------------------------- |
+| `cli.py`        | Comandos Typer, orquestación y errores de Ollama. Sin lógica de dominio.                        |
+| `indexer.py`    | Extrae chunks de paquetes instalados (introspección con `inspect`).                             |
+| `docs.py`       | Lee `.txt`/`.md`/`.rst` (sueltos, carpetas, `.zip`) y los trocea por secciones.                 |
+| `store.py`      | SQLite + `sqlite-vec` + FTS5 + metadatos (`meta`, `sources`); valida modelo y dimensión.        |
+| `consultor.py`  | RAG: `retrieve()` (nombres + FTS5 + vectorial, fusión RRF) y `stream()`.                        |
+| `versions.py`   | Versión instalada (distribución ≠ módulo) y estado de cada fuente indexada.                     |
+| `evaluation.py` | Recall@k, MRR y carga de casos de `api eval`.                                                   |
+| `llm.py`        | Capa fina sobre el cliente de Ollama (`embed`, `stream_chat`).                                  |
+| `render.py`     | Toda la salida de consola: tema Monokai, Markdown, tablas, versión.                             |
+| `config.py`     | `Settings` inmutable (modelos, rutas, `retrieval_k`, `retrieval_candidates`, ancho de consola). |
 
 Nada imprime fuera de `render.py`. `Modelfile` define el modelo `api-consultor`.
 
@@ -64,6 +65,15 @@ Nada imprime fuera de `render.py`. `Modelfile` define el modelo `api-consultor`.
   no regresión) y `api eval` (índice y embeddings reales, lo ejecuta el usuario). Un
   agente **no** ejecuta `api eval` contra el índice real: usa el banco sintético y
   sube los umbrales cuando una mejora los supere con holgura.
+
+## Índice y migraciones
+
+- El formato del índice está versionado (`FORMAT_VERSION` en `store.py`). Todo cambio de
+  esquema debe migrar solo al abrir (sin reindexar) y llevar un test con un índice
+  «antiguo» simulado (ver `test_a_legacy_index_gets_sources_inferred_from_its_chunks`).
+- Nunca insertes ni consultes vectores sin validar su dimensión (`Store.check_vector`).
+- Un cambio de `embed_model`/`embed_dim` invalida el índice: se detecta y se pide
+  reconstruirlo; no lo hagas tú sobre el índice real.
 
 ## Datos y privacidad (reglas duras)
 
@@ -97,11 +107,11 @@ la recuperación.
 ## Hoja de ruta (orden acordado)
 
 1. ~~Evaluación: Recall@k y MRR~~ (hecho: `api eval` y `tests/test_benchmark.py`).
-2. Integridad del índice: metadatos (modelo y dimensión de embeddings), validación al
-   abrir, detección de versión obsoleta, distribución ≠ módulo importable.
-3. Chunking estructural de APIs sin truncado por caracteres; detección de símbolos
-   simples (`Path`, `rglob`).
-4. Ranking con candidatos ampliados, deduplicación y umbral de relevancia.
+2. ~~Integridad del índice~~ (hecho: metadatos, validación, versiones y `api update`).
+3. Chunking estructural de APIs sin truncado por caracteres. (Los nombres simples como
+   `Path` o `rglob` ya se detectan con la recuperación híbrida.)
+4. ~~Candidatos ampliados y fusión RRF~~ (hecho). Pendiente: deduplicación por símbolo
+   y umbral de relevancia.
 5. Citas verificables (`[DOC-01]`) con comprobación de que existen en el contexto.
 6. Sources: flag de eliminar fuente
 7. Transformar las fuentes en hiperenlaces que abran el editor de texto en el documento

@@ -21,6 +21,8 @@ pregunta ──► nombres + palabras (FTS5) + vectorial ──► fusión RRF �
 ## Instalación
 
 ```bash
+git clone https://github.com/isidro-rodriguez/api-consultor
+cd api-consultor
 uv sync
 ollama pull qwen3:8b
 ollama pull bge-m3
@@ -71,8 +73,9 @@ esperadas aparecen entre los primeros resultados:
 Los casos son tablas `[[case]]` en un TOML (`question`, `expected`, `category`); ver
 [evals/stdlib.toml](evals/stdlib.toml). `expected` admite nombres exactos, comodines `*`
 y alternativas con `|` (`"json.dumps|library/json.txt#*"`). Si alguna fuente esperada
-no está en el índice, `api eval` lo avisa: ese caso no puede acertar. Úsalo antes y después de cada cambio en la
-recuperación o el chunking. Ejecútalo con Ollama en marcha: usa el índice real.
+no está en el índice, `api eval` lo avisa: ese caso no puede acertar. Úsalo antes y
+después de cada cambio en la recuperación o el chunking. Ejecútalo con Ollama en
+marcha: usa el índice real.
 
 ## Configuración
 
