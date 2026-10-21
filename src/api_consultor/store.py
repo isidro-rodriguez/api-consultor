@@ -226,6 +226,14 @@ class Store:
         )
         return [SourceInfo(*row) for row in rows]
 
+    def remove(self, package: str) -> int:
+        """Elimina una fuente con todos sus fragmentos; devuelve cuántos borró."""
+        row = self._db.execute(
+            "SELECT COUNT(*) FROM chunks WHERE package = ?", (package,)
+        ).fetchone()
+        self.replace(package, [], [])
+        return int(row[0])
+
     def qualnames(self) -> list[str]:
         return [row[0] for row in self._db.execute("SELECT qualname FROM chunks")]
 

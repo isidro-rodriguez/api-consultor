@@ -306,9 +306,25 @@ def ask(
 
 
 @app.command()
-def sources() -> None:
-    """Lista las fuentes indexadas y si siguen al día respecto a lo instalado."""
+def sources(
+    remove: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--remove",
+            "-r",
+            metavar="FUENTE",
+            help="Elimina una fuente del índice (repetible).",
+            show_default=False,
+        ),
+    ] = None,
+    yes: Annotated[
+        bool, typer.Option("--yes", "-y", help="Eliminar sin pedir confirmación.")
+    ] = False,
+) -> None:
+    """Lista las fuentes indexadas (y opcionalmente elimina alguna)."""
     with _store(check_model=False) as store:
+        if remove is not None:
+            _remove_sources(store, remove, yes=yes)
         statuses = check_versions(store.sources())
         meta = store.meta()
     if not statuses:
@@ -320,6 +336,25 @@ def sources() -> None:
         f"formato {meta.get('format_version', '?')}"
     )
     show_status_table(statuses, "Fuentes indexadas", caption)
+
+
+def _remove_sources(store: Store, names: list[str], *, yes: bool) -> None:
+    """Elimina `names` del índice; no toca nada si alguna no existe."""
+    known = {source.package: source for source in store.sources()}
+    unknown = [name for name in names if name not in known]
+    if unknown:
+        print_error(
+            f"Fuente no indexada: {', '.join(unknown)}.",
+            f"Disponibles: {', '.join(known) or 'ninguna'}.",
+        )
+        raise typer.Exit(code=1)
+    if not yes and not typer.confirm(
+        f"¿Eliminar {', '.join(names)} del índice? Se borrarán "
+        f"{sum(known[name].chunks for name in names)} fragmentos."
+    ):
+        raise typer.Exit(code=1)
+    for name in dict.fromkeys(names):
+        print_hint(f"Eliminada {name}: {store.remove(name)} fragmentos.")
 
 
 @app.command()

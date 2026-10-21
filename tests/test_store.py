@@ -284,3 +284,19 @@ def test_search_scored_returns_distances_in_ascending_order(store: Store) -> Non
     assert [c.qualname for c, _ in scored] == ["pkg.a", "pkg.b"]
     assert scored[0][1] == pytest.approx(0.0)
     assert scored[1][1] > scored[0][1]
+
+
+def test_remove_deletes_the_source_from_every_index(store: Store) -> None:
+    store.replace(
+        "keep", [Chunk("k", "keep", "1", "textoconservado")], [[1.0, 0, 0, 0]]
+    )
+    store.replace("gone", [Chunk("g", "gone", "1", "textoborrado")], [[0, 1.0, 0, 0]])
+    assert store.remove("gone") == 1
+    assert [s.package for s in store.sources()] == ["keep"]
+    assert store.lexical('"textoborrado"', 5) == []
+    assert [c.qualname for c in store.search([0, 1.0, 0, 0], 5)] == ["k"]
+    assert store.by_name(["g"]) == []
+
+
+def test_remove_unknown_source_returns_zero(store: Store) -> None:
+    assert store.remove("nada") == 0

@@ -276,3 +276,30 @@ def test_ask_verifies_citations_in_the_answer(indexed: StubOllama) -> None:
     assert result.exit_code == 0, result.output
     assert "DOC-01 ✔" in result.output
     assert "inexistentes (DOC-99)" in result.output
+
+
+def test_sources_remove_deletes_after_confirmation(indexed: StubOllama) -> None:
+    result = runner.invoke(app, ["sources", "--remove", "mis-notas"], input="y\n")
+    assert result.exit_code == 0, result.output
+    assert "Eliminada mis-notas" in result.output
+    assert "Nada indexado" in result.output
+
+
+def test_sources_remove_declined_keeps_the_index(indexed: StubOllama) -> None:
+    result = runner.invoke(app, ["sources", "-r", "mis-notas"], input="n\n")
+    assert result.exit_code == 1
+    assert "mis-notas" in runner.invoke(app, ["sources"]).output
+
+
+def test_sources_remove_yes_skips_confirmation(indexed: StubOllama) -> None:
+    result = runner.invoke(app, ["sources", "-r", "mis-notas", "-r", "mis-notas", "-y"])
+    assert result.exit_code == 0, result.output
+    assert result.output.count("Eliminada mis-notas") == 1
+
+
+def test_sources_remove_unknown_changes_nothing(indexed: StubOllama) -> None:
+    result = runner.invoke(app, ["sources", "-r", "mis-notas", "-r", "fantasma", "-y"])
+    assert result.exit_code == 1
+    assert "fantasma" in result.output
+    assert "Disponibles: mis-notas" in result.output
+    assert "mis-notas" in runner.invoke(app, ["sources"]).output

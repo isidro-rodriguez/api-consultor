@@ -9,6 +9,8 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Añadido
 
+- `api sources --remove FUENTE` (`-r`, repetible, `-y` sin confirmar): elimina fuentes del
+  índice; si alguna no existe, no borra nada.
 - Citas verificables: cada fragmento llega al modelo con un id (`DOC-01`), se le pide
   citarlos y `ask` comprueba la respuesta. El panel «Fuentes» muestra los ids, marca
   con ✔ los citados y avisa de citas inexistentes o de respuestas sin citas.

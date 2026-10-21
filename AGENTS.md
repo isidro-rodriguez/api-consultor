@@ -115,7 +115,7 @@ la recuperación.
    calibrarlo con datos reales usando `--debug`.
 5. ~~Citas verificables (`[DOC-01]`)~~ (hecho: `citations.py`; el Modelfile también lo pide,
    recréalo con `ollama create`).
-6. Sources: flag de eliminar fuente
+6. ~~Sources: flag de eliminar fuente~~ (hecho: `api sources --remove`).
 7. Transformar las fuentes en hiperenlaces que abran el editor de texto en el documento
 8. Aplazado: símbolos sin docstring, AST/herencia/reexportaciones, reranker.
 9. Empaquetado como paquete instalable UV tool

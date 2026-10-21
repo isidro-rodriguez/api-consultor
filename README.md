@@ -39,6 +39,7 @@ uv run api ask "¿cómo hago un POST con timeout?"
 uv run api ask                          # modo interactivo
 uv run api ask --debug "..."            # muestra candidatos, señales y distancias
 uv run api sources                      # qué hay indexado y si está al día
+uv run api sources --remove requests   # elimina una fuente del índice
 uv run api update                       # reindexa los paquetes que han cambiado de versión
 uv run api eval evals/stdlib.toml       # mide la calidad de la recuperación
 uv run api --version
