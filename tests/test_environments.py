@@ -112,6 +112,20 @@ def test_extract_remote_reports_missing_and_broken_packages(
         extract_remote(python, "roto_pkg")
 
 
+def test_extract_remote_ignores_noise_and_aborting_submodules(
+    venv_dir: Path, foreign: Callable[[str, str], Path]
+) -> None:
+    # Como pygame: saludo por stdout (también a nivel de descriptor, como el código
+    # en C) y un ejemplo que hace `raise SystemExit` al importarse.
+    noisy = "import os\nprint('hola')\nos.write(1, b'desde C')\n" + CODE
+    purelib = foreign("ruidoso_pkg", noisy)
+    (purelib / "ruidoso_pkg" / "ejemplo.py").write_text(
+        "print('falta numpy')\nraise SystemExit\n", encoding="utf-8"
+    )
+    extraction = extract_remote(str(resolve_interpreter(venv_dir)), "ruidoso_pkg")
+    assert {chunk.qualname for chunk in extraction.chunks} >= {"ruidoso_pkg.saluda"}
+
+
 def test_remote_versions(venv_dir: Path) -> None:
     python = str(resolve_interpreter(venv_dir))
     found = remote_versions(python, ["json", "no_esta_instalado_xyz"])
@@ -128,7 +142,7 @@ def test_unusable_interpreters_raise_probe_error(
     broken = tmp_path / "falsa_sonda.py"
     broken.write_text("print('no-json')\n", encoding="utf-8")
     monkeypatch.setattr(external, "PROBE", broken)
-    with pytest.raises(ProbeError, match="no respondió"):
+    with pytest.raises(ProbeError, match=r"no respondió correctamente \(no-json\)"):
         remote_versions(sys.executable, ["json"])
 
 
@@ -159,6 +173,19 @@ def test_probe_reports_import_errors(
     name = make_package("sonda_rota", {"__init__.py": "raise ValueError('mal')\n"})
     assert probe.main(["extract", name]) == probe.EXIT_IMPORT
     assert "mal" in capsys.readouterr().out
+
+
+def test_probe_keeps_package_output_out_of_the_json(
+    make_package: PackageFactory, capsys: pytest.CaptureFixture[str]
+) -> None:
+    name = make_package(
+        "sonda_ruidosa",
+        {"__init__.py": "print('saludo')\n" + CODE, "demo.py": "raise SystemExit\n"},
+    )
+    assert probe.main(["extract", name]) == 0
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["chunks"]
+    assert "saludo" in captured.err
 
 
 def test_probe_uses_the_chunk_dataclass_fields() -> None:

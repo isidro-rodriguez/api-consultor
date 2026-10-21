@@ -66,7 +66,8 @@ def _payload(result: subprocess.CompletedProcess[str]) -> dict[str, object]:
     try:
         data = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
-        detail = result.stderr.strip().splitlines()[-1:] or ["sin salida"]
+        lines = result.stderr.strip().splitlines() or result.stdout.strip().splitlines()
+        detail = lines[-1:] or ["sin salida"]
         message = f"La sonda no respondió correctamente ({detail[0]})."
         raise ProbeError(message) from exc
     return (

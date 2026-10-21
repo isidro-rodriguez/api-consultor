@@ -117,7 +117,7 @@ def _walk_modules(package: str) -> Iterator[ModuleType]:
             continue
         try:
             yield importlib.import_module(info.name)
-        except Exception:  # código de terceros: cualquier fallo vale
+        except (Exception, SystemExit):  # código de terceros: cualquier fallo vale
             log.warning("No se pudo importar %s", info.name)
 
 

@@ -5,6 +5,19 @@ Todos los cambios relevantes de este proyecto se documentan aquí.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el
 proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
+## [Sin publicar]
+
+### Corregido
+
+- `api index --python` fallaba con «La sonda no respondió correctamente (sin
+  salida)» en paquetes que escriben por stdout al importarse (p. ej. el saludo de
+  pygame / pygame-ce): la sonda desvía esa salida a stderr y solo emite el JSON.
+- Un submódulo que hace `raise SystemExit` al importarse (como
+  `pygame.examples.glcube` sin PyOpenGL) abortaba el indexado; ahora se omite
+  con un aviso, igual que cualquier otro fallo de importación.
+- Si la sonda no devuelve JSON y stderr está vacío, el error muestra la última
+  línea de su salida en vez de «sin salida».
+
 ## [0.3.0] - 2026-10-21
 
 ### Añadido
