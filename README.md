@@ -26,7 +26,8 @@ Como herramienta global (el comando `api` queda disponible en cualquier carpeta)
 
 ```bash
 uv tool install git+https://github.com/isidro-rodriguez/api-consultor
-api setup        # descarga qwen3:8b y bge-m3 y crea el modelo api-consultor
+api setup        # descarga qwen3:8b y bge-m3, crea el modelo api-consultor y
+                 # ofrece indexar la biblioteca estándar de Python (por defecto, sí)
 ```
 
 Actualizar: `uv tool upgrade api-consultor` y, si cambió el `Modelfile`, `api setup`.
@@ -47,13 +48,15 @@ Los ejemplos de abajo usan `uv run api`; con la herramienta instalada basta `api
 ```bash
 uv run api index requests rich          # docstrings de paquetes de la herramienta
 uv run api index requests -p .venv      # ... o de un entorno virtual de tu proyecto
+uv run api index --stdlib               # toda la biblioteca estándar (≈200 módulos)
+uv run api index --stdlib -p <python>   # la de otra versión de Python
 uv run api index-docs                   # documentación del usuario (zip, carpetas, ficheros)
 uv run api index-docs ~/mis-docs        # otra carpeta (ofrece copiarla a la del usuario)
 uv run api index-docs -x 'whatsnew/*'   # omitiendo rutas (patrones fnmatch)
 uv run api ask "¿cómo hago un POST con timeout?"
 uv run api ask                          # modo interactivo
 uv run api ask --debug "..."            # muestra candidatos, señales y distancias
-uv run api sources                      # qué hay indexado y si está al día
+uv run api sources                      # qué hay indexado (stdlib resumida; --all la expande)
 uv run api sources --remove requests   # elimina una fuente del índice
 uv run api sources --relocate notas D:/docs/notas  # una fuente movida de sitio
 uv run api update                       # reindexa los paquetes que han cambiado de versión

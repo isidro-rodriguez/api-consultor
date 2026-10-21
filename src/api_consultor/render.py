@@ -605,7 +605,7 @@ def show_status_table(
         border_style="muted",
         header_style=f"bold {FG}",
     )
-    table.add_column("Fuente", style="info")
+    table.add_column("Fuente", style="info", no_wrap=True)
     table.add_column("Indexada", style="muted")
     table.add_column("Instalada", style=FG)
     table.add_column("Estado", no_wrap=True)

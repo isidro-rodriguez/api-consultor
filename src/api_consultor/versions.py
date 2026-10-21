@@ -81,7 +81,7 @@ def _foreign_versions(
     """Versiones instaladas en los entornos ajenos; vacío si el entorno ya no está."""
     wanted: dict[str, list[str]] = {}
     for source in sources:
-        if source.kind == "package" and not is_own(source.python):
+        if source.kind != "docs" and not is_own(source.python):
             wanted.setdefault(source.python, []).append(source.package)
     found: dict[str, dict[str, str | None]] = {}
     for python, names in wanted.items():
@@ -108,13 +108,13 @@ def check_versions(sources: Sequence[SourceInfo]) -> list[VersionStatus]:
     """
     distributions = (
         metadata.packages_distributions()
-        if any(s.kind == "package" and is_own(s.python) for s in sources)
+        if any(s.kind != "docs" and is_own(s.python) for s in sources)
         else {}
     )
     foreign = _foreign_versions(sources)
     statuses: list[VersionStatus] = []
     for source in sources:
-        if source.kind != "package":
+        if source.kind == "docs":
             gone = bool(source.root) and not Path(source.root).is_dir()
             statuses.append(VersionStatus(source, None, "gone" if gone else "docs"))
         elif is_own(source.python):
@@ -126,3 +126,44 @@ def check_versions(sources: Sequence[SourceInfo]) -> list[VersionStatus]:
             installed = foreign[source.python].get(source.package)
             statuses.append(VersionStatus(source, installed, _state(source, installed)))
     return statuses
+
+
+_SEVERITY = ("gone", "stale", "missing", "unknown", "ok")
+"""Estados de peor a mejor: el de un grupo es el de su peor miembro."""
+
+
+def collapse_stdlib(statuses: Sequence[VersionStatus]) -> list[VersionStatus]:
+    """Resume en una fila por intérprete las fuentes de la biblioteca estándar.
+
+    Args:
+        statuses: Estados de todas las fuentes.
+
+    Returns:
+        Los estados no estándar tal cual y, en el lugar del primer módulo estándar de
+        cada intérprete, una fila de resumen con la suma de fragmentos.
+    """
+    groups: dict[str, list[VersionStatus]] = {}
+    for status in statuses:
+        if status.source.kind == "stdlib":
+            groups.setdefault(status.source.python, []).append(status)
+    result: list[VersionStatus] = []
+    for status in statuses:
+        if status.source.kind != "stdlib":
+            result.append(status)
+            continue
+        members = groups.pop(status.source.python, None)
+        if members is None:
+            continue  # ya resumido
+        source = status.source
+        summary = SourceInfo(
+            f"stdlib ({len(members)} módulos)",
+            source.version,
+            sum(member.source.chunks for member in members),
+            "stdlib",
+            max(member.source.indexed_at for member in members),
+            source.root,
+            source.python,
+        )
+        state = min((m.state for m in members), key=_SEVERITY.index)
+        result.append(VersionStatus(summary, status.installed, state))
+    return result

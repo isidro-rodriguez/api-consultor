@@ -24,8 +24,14 @@ from .config import SETTINGS
 from .consultor import Consultor, format_context
 from .docs import Files, collect, extract_doc_chunks, import_docs, materialize
 from .evaluation import DEFAULT_KS, evaluate, load_cases, missing_sources
-from .external import ProbeError, extract_remote, is_own, resolve_interpreter
-from .indexer import extract_package
+from .external import (
+    ProbeError,
+    extract_remote,
+    is_own,
+    remote_stdlib,
+    resolve_interpreter,
+)
+from .indexer import extract_package, stdlib_modules
 from .llm import embed
 from .models import base_model, has_model, installed_models, modelfile
 from .records import Chunk, Extraction, SourceInfo, relativize
@@ -58,7 +64,7 @@ from .userconfig import (
     effective,
     load,
 )
-from .versions import check_versions
+from .versions import check_versions, collapse_stdlib
 
 BATCH_SIZE = 32
 """Fragmentos que se envían a Ollama por petición de embeddings."""
@@ -202,7 +208,7 @@ def _index_source(
 
 
 def _index_packages(
-    store: Store, packages: Sequence[str], python: str = ""
+    store: Store, packages: Sequence[str], python: str = "", kind: str = "package"
 ) -> list[SourceInfo]:
     """Indexa paquetes del entorno de la herramienta o, con `python`, de otro."""
     remote = not is_own(python)
@@ -215,7 +221,7 @@ def _index_packages(
                 else partial(extract_package, package)
             )
             try:
-                info = _index_source(store, progress, package, build)
+                info = _index_source(store, progress, package, build, kind)
             except ModuleNotFoundError as exc:
                 where = f"en {python}" if remote else "en el entorno de la herramienta"
                 print_warning(
@@ -238,13 +244,20 @@ def _index_packages(
 @app.command()
 def index(
     packages: Annotated[
-        list[str],
+        list[str] | None,
         typer.Argument(
-            metavar="PAQUETE...",
+            metavar="[PAQUETE]...",
             help="Paquetes instalados en el entorno.",
             show_default=False,
         ),
-    ],
+    ] = None,
+    stdlib: Annotated[
+        bool,
+        typer.Option(
+            "--stdlib",
+            help="Indexa toda la biblioteca estándar de Python (≈200 módulos).",
+        ),
+    ] = False,
     python: Annotated[
         Path | None,
         typer.Option(
@@ -258,6 +271,9 @@ def index(
     ] = None,
 ) -> None:
     """Indexa paquetes Python instalados (firmas y docstrings)."""
+    names = [] if packages is None else packages
+    if not names and not stdlib:
+        _fail("Indica algún paquete o `--stdlib`.", "Ejemplo: `api index requests`.")
     interpreter = ""
     if python is not None:
         try:
@@ -265,8 +281,23 @@ def index(
         except FileNotFoundError as exc:
             _fail(str(exc), "Indica la carpeta del entorno (`.venv`) o su Python.")
     with _store() as store:
-        results = _index_packages(store, packages, interpreter)
+        results: list[SourceInfo] = []
+        if stdlib:
+            modules = _stdlib_names(interpreter)
+            names = [name for name in names if name not in modules]
+            results += _index_packages(store, modules, interpreter, "stdlib")
+        results += _index_packages(store, names, interpreter)
     show_sources_table(results, "Indexado")
+
+
+def _stdlib_names(python: str) -> list[str]:
+    """Módulos de la biblioteca estándar del entorno de la herramienta o de `python`."""
+    if is_own(python):
+        return stdlib_modules()
+    try:
+        return remote_stdlib(python)
+    except ProbeError as exc:
+        _fail(str(exc))
 
 
 def _docs_cache() -> Path:
@@ -438,7 +469,7 @@ def ask(
         if not store.sources():
             _fail(
                 "No hay nada indexado todavía.",
-                "Usa `api index <paquete>` o `api index-docs`.",
+                "Usa `api index <paquete>`, `api index --stdlib` o `api index-docs`.",
             )
         stale = _warn_stale(store)
         roots = {source.package: source.root for source in store.sources()}
@@ -467,6 +498,12 @@ def sources(
     yes: Annotated[
         bool, typer.Option("--yes", "-y", help="Eliminar sin pedir confirmación.")
     ] = False,
+    show_all: Annotated[
+        bool,
+        typer.Option(
+            "--all", "-a", help="Muestra cada módulo de la biblioteca estándar."
+        ),
+    ] = False,
     relocate: Annotated[
         tuple[str, Path] | None,
         typer.Option(
@@ -488,12 +525,15 @@ def sources(
     if not statuses:
         print_hint("Nada indexado todavía.")
         return
+    shown = statuses if show_all else collapse_stdlib(statuses)
     caption = (
         f"Embeddings: {meta.get('embed_model', 'sin registrar')} · "
         f"{meta.get('embed_dim', '?')} dimensiones · "
         f"formato {meta.get('format_version', '?')}"
     )
-    show_status_table(statuses, "Fuentes indexadas", caption)
+    if len(shown) < len(statuses):
+        caption += " · `--all` muestra cada módulo estándar"
+    show_status_table(shown, "Fuentes indexadas", caption)
 
 
 def _relocate_source(store: Store, name: str, folder: Path) -> None:
@@ -516,8 +556,13 @@ def _relocate_source(store: Store, name: str, folder: Path) -> None:
 
 def _remove_sources(store: Store, names: list[str], *, yes: bool) -> None:
     """Elimina `names` del índice; no toca nada si alguna no existe."""
-    names = list(dict.fromkeys(names))
     known = {source.package: source for source in store.sources()}
+    if "stdlib" in names and "stdlib" not in known:  # alias de todos los módulos
+        every = [name for name, source in known.items() if source.kind == "stdlib"]
+        names = [
+            name for item in names for name in (every if item == "stdlib" else [item])
+        ]
+    names = list(dict.fromkeys(names))
     unknown = [name for name in names if name not in known]
     if unknown:
         print_error(
@@ -544,8 +589,17 @@ def _ollama(*args: str) -> None:
 
 
 @app.command()
-def setup() -> None:
-    """Descarga los modelos de Ollama y crea el modelo de chat (idempotente)."""
+def setup(
+    stdlib: Annotated[
+        bool | None,
+        typer.Option(
+            "--stdlib/--no-stdlib",
+            help="Indexar (o no) la biblioteca estándar sin preguntar.",
+            show_default=False,
+        ),
+    ] = None,
+) -> None:
+    """Descarga los modelos de Ollama, crea el de chat y ofrece indexar la stdlib."""
     if shutil.which("ollama") is None:
         _fail(
             "No se encuentra el comando `ollama`.",
@@ -562,7 +616,26 @@ def setup() -> None:
         print_hint(f"Creando el modelo {SETTINGS.chat_model}...")
         with as_file(modelfile()) as path:
             _ollama("create", SETTINGS.chat_model, "-f", str(path))
+    _offer_stdlib(stdlib)
     print_hint("Listo. Indexa algo (`api index <paquete>`) y pregunta con `api ask`.")
+
+
+def _offer_stdlib(answer: bool | None) -> None:
+    """Ofrece indexar la biblioteca estándar si todavía no está en el índice."""
+    with _store() as store:
+        if any(source.kind == "stdlib" for source in store.sources()):
+            return
+        if answer is None:
+            answer = typer.confirm(
+                "¿Indexar ahora la biblioteca estándar de Python? Son unos 200 módulos "
+                "y tarda unos minutos (después: `api index --stdlib -p <python>` para "
+                "otra versión).",
+                default=True,
+            )
+        if answer:
+            show_sources_table(
+                _index_packages(store, _stdlib_names(""), "", "stdlib"), "Indexado"
+            )
 
 
 @app.command()
@@ -589,13 +662,19 @@ def update(
         if not stale:
             print_hint("Todas las fuentes están al día.")
             return
-        show_status_table(stale, "Fuentes obsoletas")
+        show_status_table(collapse_stdlib(stale), "Fuentes obsoletas")
         if not yes and not typer.confirm("¿Reindexarlas ahora?"):
             raise typer.Exit(code=1)
         results: list[SourceInfo] = []
-        for python in dict.fromkeys(s.source.python for s in stale):
-            names = [s.source.package for s in stale if s.source.python == python]
-            results += _index_packages(store, names, python)
+        for python, kind in dict.fromkeys(
+            (s.source.python, s.source.kind) for s in stale
+        ):
+            names = [
+                s.source.package
+                for s in stale
+                if (s.source.python, s.source.kind) == (python, kind)
+            ]
+            results += _index_packages(store, names, python, kind)
     show_sources_table(results, "Reindexado")
 
 
@@ -636,7 +715,7 @@ def eval_command(
         if not store.sources():
             _fail(
                 "No hay nada indexado todavía.",
-                "Usa `api index <paquete>` o `api index-docs`.",
+                "Usa `api index <paquete>`, `api index --stdlib` o `api index-docs`.",
             )
         missing = missing_sources(loaded, store.qualnames())
         if missing:

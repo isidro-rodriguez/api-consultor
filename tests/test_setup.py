@@ -56,7 +56,7 @@ def test_setup_pulls_missing_and_creates_model(
     calls: list[list[str]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr("api_consultor.cli.installed_models", lambda: {"bge-m3:latest"})
-    result = runner.invoke(app, ["setup"])
+    result = runner.invoke(app, ["setup", "--no-stdlib"])
     assert result.exit_code == 0, result.output
     assert calls[0] == ["ollama", "pull", "qwen3:8b"]
     assert calls[1][:3] == ["ollama", "create", SETTINGS.chat_model]

@@ -3,6 +3,7 @@
 import contextlib
 import importlib
 import importlib.metadata
+import importlib.util
 import inspect
 import logging
 import pkgutil
@@ -230,6 +231,34 @@ def extract_chunks(package: str) -> list[Chunk]:
                 for method_name, method in _public_methods(obj, package, public):
                     add(f"{qualname}.{method_name}", method)
     return chunks
+
+
+STDLIB_SKIP = frozenset(
+    {"test", "idlelib", "turtledemo", "lib2to3", "this", "antigravity", "__main__"}
+)
+"""Módulos de la biblioteca estándar que no se indexan: pruebas, demos o con efectos
+al importarse (`this` imprime el Zen, `antigravity` abre el navegador)."""
+
+
+def stdlib_modules() -> list[str]:
+    """Lista los módulos públicos de la biblioteca estándar importables aquí.
+
+    Se descartan los privados (`_xxx`), `STDLIB_SKIP` y los de otras plataformas.
+
+    Returns:
+        Nombres ordenados, p. ej. `["abc", "argparse", ...]`.
+    """
+    names: list[str] = []
+    for name in sorted(sys.stdlib_module_names):
+        if name.startswith("_") or name in STDLIB_SKIP:
+            continue
+        try:
+            found = importlib.util.find_spec(name)
+        except (ImportError, ValueError):
+            continue
+        if found is not None:
+            names.append(name)
+    return names
 
 
 def _package_root(package: str) -> Path | None:

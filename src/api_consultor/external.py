@@ -122,6 +122,26 @@ def remote_versions(python: str, names: Sequence[str]) -> dict[str, str | None]:
     return {name: None if v is None else str(v) for name, v in data.items()}
 
 
+def remote_stdlib(python: str) -> list[str]:
+    """Lista los módulos públicos de la biblioteca estándar de otro intérprete.
+
+    Args:
+        python: Intérprete del entorno.
+
+    Returns:
+        Nombres de módulo ordenados.
+
+    Raises:
+        ProbeError: Si el intérprete no se puede usar.
+    """
+    result = _run(python, "stdlib")
+    data = _payload(result)
+    modules = data.get("modules")
+    if result.returncode != 0 or not isinstance(modules, list):
+        raise ProbeError(str(data.get("error", "fallo desconocido")))
+    return [str(name) for name in modules]
+
+
 def is_own(python: str) -> bool:
     """Indica si `python` es el intérprete que ejecuta la aplicación."""
     return not python or Path(python) == Path(sys.executable)

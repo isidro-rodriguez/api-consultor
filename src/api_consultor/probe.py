@@ -31,7 +31,7 @@ def _emit(data: object, code: int = 0) -> int:
 
 
 def main(argv: list[str]) -> int:
-    """Ejecuta `extract PAQUETE` o `versions PAQUETE...` y escribe el JSON."""
+    """Ejecuta `extract PAQUETE`, `versions PAQUETE...` o `stdlib` y escribe el JSON."""
     if sys.version_info < MIN_PYTHON:
         found = ".".join(map(str, sys.version_info[:2]))
         return _emit({"error": f"Se necesita Python 3.12 o superior (es {found})."}, 3)
@@ -41,6 +41,8 @@ def main(argv: list[str]) -> int:
         versions = importlib.import_module("api_consultor.versions")
         return _emit({n: versions.installed_version(n) for n in names})
     indexer = importlib.import_module("api_consultor.indexer")
+    if command == "stdlib":
+        return _emit({"modules": indexer.stdlib_modules()})
     try:
         extraction = indexer.extract_package(names[0])
     except ModuleNotFoundError as exc:

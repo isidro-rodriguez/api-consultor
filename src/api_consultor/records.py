@@ -34,7 +34,8 @@ class SourceInfo:
         package: Nombre de la fuente.
         version: Versión registrada al indexar.
         chunks: Número de fragmentos.
-        kind: `"package"` (API de un paquete) o `"docs"` (documentación).
+        kind: `"package"` (API de un paquete), `"stdlib"` (módulo de la biblioteca
+            estándar) o `"docs"` (documentación).
         indexed_at: Fecha ISO de indexado (no cuenta en la comparación).
         root: Carpeta que contiene los ficheros de la fuente; vacía si se desconoce.
         python: Intérprete del entorno donde se indexó el paquete; vacío si fue el

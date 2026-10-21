@@ -183,7 +183,7 @@ def test_missing_default_folder_explains_where_to_put_the_docs(
 ) -> None:
     result = runner.invoke(app, ["index-docs"])
     assert result.exit_code == 1
-    assert "index-docs <carpeta>" in result.output
+    assert "index-docs <carpeta>" in flat(result.output)
 
 
 @pytest.fixture

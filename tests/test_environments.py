@@ -266,3 +266,41 @@ def test_update_reindexes_in_the_original_environment(
         [source] = store.sources()
     assert (source.version, source.python) == ("1.0", python)
     assert "al día" in runner.invoke(app, ["sources"]).output
+
+
+def test_stdlib_modules_are_public_and_importable_here() -> None:
+    from api_consultor.indexer import STDLIB_SKIP, stdlib_modules
+
+    modules = stdlib_modules()
+    assert {"json", "pathlib", "shutil", "asyncio"} <= set(modules)
+    assert not {"_thread", "this", "test", "antigravity"} & set(modules)
+    assert not STDLIB_SKIP & set(modules)
+    assert modules == sorted(modules)
+
+
+def test_probe_lists_the_stdlib(capsys: pytest.CaptureFixture[str]) -> None:
+    assert probe.main(["stdlib"]) == 0
+    assert "json" in json.loads(capsys.readouterr().out)["modules"]
+
+
+def test_remote_stdlib(venv_dir: Path, tmp_path: Path) -> None:
+    from api_consultor.external import remote_stdlib
+
+    assert "json" in remote_stdlib(str(resolve_interpreter(venv_dir)))
+    with pytest.raises(ProbeError):
+        remote_stdlib(str(tmp_path / "no-python"))
+
+
+def test_remote_stdlib_rejects_unexpected_answers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import subprocess
+
+    from api_consultor.external import remote_stdlib
+
+    def fake_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess([], 3, stdout='{"error": "viejo"}')
+
+    monkeypatch.setattr(external.subprocess, "run", fake_run)
+    with pytest.raises(ProbeError, match="viejo"):
+        remote_stdlib("python")

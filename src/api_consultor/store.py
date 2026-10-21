@@ -283,7 +283,7 @@ class Store:
             package: Nombre de la fuente.
             chunks: Fragmentos nuevos.
             embeddings: Un embedding por fragmento, en el mismo orden.
-            kind: `"package"` o `"docs"`.
+            kind: `"package"`, `"stdlib"` o `"docs"`.
             root: Carpeta a la que son relativas las rutas de los fragmentos.
             python: Intérprete del entorno indexado; vacío si es el de la herramienta.
 
