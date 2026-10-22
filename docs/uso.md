@@ -40,6 +40,9 @@ api index --stdlib -p .venv     # la stdlib de otra versión de Python
 - **Indexar ejecuta código.** Para leer la API hay que importar el paquete, y eso
   ejecuta su código (con o sin `--python`; `python -I` no es un *sandbox*). Indexa
   solo paquetes en los que confíes, igual que al instalarlos.
+- **Nombre de cada símbolo.** Lo que se reexporta en la raíz del paquete se indexa con
+  ese nombre (`rich.Console`); lo demás, en el módulo que lo define
+  (`rich.console.Console`), aunque otros módulos lo importen.
 - **Qué se omite.** Nombres privados (`_algo`), símbolos sin docstring y submódulos que
   fallan al importarse, incluso con `SystemExit` (se avisa y se continúa).
 - **Fragmentos largos.** Un docstring de más de ~2000 caracteres se divide por secciones

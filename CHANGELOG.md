@@ -9,6 +9,11 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Corregido
 
+- Un objeto importado en otro módulo del mismo paquete se indexaba con el nombre del
+  primero que lo importaba, por orden alfabético (`rich.bar.Console` en vez de
+  `rich.console.Console`), y no se encontraba por su nombre real. Ahora gana el alias
+  de la raíz del paquete y, si no, el módulo que lo define. Reindexa los paquetes
+  afectados (`api index rich`, o con `-p` el de su entorno).
 - Un subpaquete cuyo `__init__` hace `raise SystemExit` abortaba todo el indexado
   (`pkgutil.walk_packages` no lo captura); ahora se omite con un aviso.
 - La sonda de `--python` ya no puede quedarse colgada: se cancela a los 10 minutos y

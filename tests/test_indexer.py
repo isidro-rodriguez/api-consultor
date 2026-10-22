@@ -308,3 +308,31 @@ def test_private_subpackages_are_not_imported(make_package: PackageFactory) -> N
         },
     )
     assert "con_privado.publico.f" in {c.qualname for c in extract_chunks(name)}
+
+
+def test_imported_objects_are_indexed_where_they_are_defined(
+    make_package: PackageFactory,
+) -> None:
+    # Como `rich.bar` importando `Console`: «a» se recorre antes que «z».
+    name = make_package(
+        "reexporta",
+        {
+            "__init__.py": "from .z_def import Raiz\n",
+            "a_usa.py": "from .z_def import Clase, Raiz, funcion\n",
+            "z_def.py": (
+                "class Clase:\n    '''Clase.'''\n"
+                "    def metodo(self) -> None:\n        '''Método.'''\n"
+                "class Raiz:\n    '''Reexportada en la raíz.'''\n"
+                "def funcion() -> None:\n    '''Función.'''\n"
+            ),
+        },
+    )
+    qualnames = {chunk.qualname for chunk in extract_chunks(name)}
+    assert {
+        "reexporta.z_def.Clase",
+        "reexporta.z_def.Clase.metodo",
+        "reexporta.z_def.funcion",
+        "reexporta.Raiz",  # el alias público de la raíz sigue ganando
+    } <= qualnames
+    assert not any(q.startswith("reexporta.a_usa.") for q in qualnames)
+    assert "reexporta.z_def.Raiz" not in qualnames

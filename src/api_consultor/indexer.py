@@ -8,7 +8,7 @@ import inspect
 import logging
 import pkgutil
 import sys
-from collections.abc import Collection, Iterable, Iterator
+from collections.abc import Collection, Iterable, Iterator, Sequence
 from functools import cached_property
 from pathlib import Path
 from types import ModuleType
@@ -174,6 +174,30 @@ def _public_methods(
                 yield name, member
 
 
+def _canonical_homes(
+    loaded: Sequence[tuple[ModuleType, list[tuple[str, object]]]], package: str
+) -> dict[int, str]:
+    """Nombre con el que se indexa cada objeto público visto en varios módulos.
+
+    Gana el alias de la raíz del paquete (`rich.Console` si se reexporta ahí); si no,
+    el módulo que lo define (`rich.console.Console`, no el `rich.bar.Console` que solo
+    lo importa); si tampoco es público, el primero en recorrerse.
+    """
+
+    def rank(module: ModuleType, obj: object) -> int:
+        if module.__name__ == package:
+            return 0
+        return 1 if getattr(obj, "__module__", None) == module.__name__ else 2
+
+    best: dict[int, tuple[int, int, str]] = {}
+    for order, (module, found) in enumerate(loaded):
+        for name, obj in found:
+            candidate = (rank(module, obj), order, f"{module.__name__}.{name}")
+            if id(obj) not in best or candidate < best[id(obj)]:
+                best[id(obj)] = candidate
+    return {key: qualname for key, (_rank, _order, qualname) in best.items()}
+
+
 def extract_chunks(package: str) -> list[Chunk]:
     """Devuelve chunks de cada módulo, función, clase, método y propiedad públicos.
 
@@ -228,11 +252,14 @@ def extract_chunks(package: str) -> list[Chunk]:
         for _name, obj in found
         if inspect.isclass(obj)
     }
+    home = _canonical_homes(loaded, package)
     for module, found in loaded:
         add(module.__name__, module)
         for name, obj in found:
             qualname = f"{module.__name__}.{name}"
-            add(qualname, obj)  # raíz primero: gana el alias público
+            if home[id(obj)] != qualname:
+                continue  # importado aquí: se indexa donde le corresponde
+            add(qualname, obj)
             if inspect.isclass(obj):
                 for method_name, method in _public_methods(obj, package, public):
                     add(f"{qualname}.{method_name}", method)
