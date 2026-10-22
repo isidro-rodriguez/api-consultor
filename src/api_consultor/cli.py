@@ -31,7 +31,7 @@ from . import __version__
 from .citations import check_citations
 from .config import SETTINGS
 from .consultor import Consultor, format_context
-from .docs import Files, collect, extract_doc_chunks, materialize
+from .docs import DocsError, Files, collect, extract_doc_chunks, materialize
 from .evaluation import DEFAULT_KS, evaluate, load_cases, missing_sources
 from .external import (
     ProbeError,
@@ -179,7 +179,7 @@ def _handled_errors() -> Generator[None]:
     """Convierte los fallos típicos de Ollama y del índice en mensajes legibles."""
     try:
         yield
-    except (IndexIntegrityError, UserConfigError) as exc:
+    except (IndexIntegrityError, UserConfigError, DocsError) as exc:
         _fail(str(exc), exc.hint)
     except ConnectionError:
         _fail(

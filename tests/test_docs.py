@@ -1,8 +1,12 @@
 import zipfile
 from pathlib import Path
 
+import pytest
+
+from api_consultor import docs as docs_module
 from api_consultor.docs import (
     CHUNK_CHARS,
+    DocsError,
     collect,
     extract_doc_chunks,
     materialize,
@@ -179,3 +183,65 @@ def test_materialize_ignores_members_that_escape_the_target(tmp_path: Path) -> N
     assert not (tmp_path / "fuera.md").exists()
     assert not (tmp_path / "cache" / "fuera.md").exists()
     assert [f.name for f in root.rglob("*") if f.is_file()] == ["dentro.md"]
+
+
+def _zip(path: Path, files: dict[str, str]) -> Path:
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, text in files.items():
+            zf.writestr(name, text)
+    return path
+
+
+def test_a_folder_and_a_zip_with_the_same_name_collide(tmp_path: Path) -> None:
+    (tmp_path / "foo").mkdir()
+    (tmp_path / "foo" / "a.md").write_text("# A\n", encoding="utf-8")
+    _zip(tmp_path / "foo.zip", {"b.md": "# B\n"})
+    with pytest.raises(DocsError, match=r"«foo»: foo\.zip"):
+        collect(tmp_path)
+
+
+def test_loose_files_collide_with_a_docs_folder(tmp_path: Path) -> None:
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "a.md").write_text("# A\n", encoding="utf-8")
+    (tmp_path / "suelto.md").write_text("# S\n", encoding="utf-8")
+    with pytest.raises(DocsError, match="«docs»"):
+        collect(tmp_path)
+
+
+def test_a_zip_bomb_is_rejected_before_reading(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Muy comprimible: pocos bytes en el zip, mucho texto al descomprimir.
+    _zip(tmp_path / "bomba.zip", {"a.txt": "0" * 4096, "b.txt": "0" * 4096})
+    monkeypatch.setattr(docs_module, "MAX_SOURCE_BYTES", 6000)
+    with pytest.raises(DocsError, match=r"bomba\.zip ocupa"):
+        collect(tmp_path)
+
+
+def test_oversized_files_and_too_many_files_are_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder = tmp_path / "muchos"
+    folder.mkdir()
+    for index in range(3):
+        (folder / f"{index}.md").write_text("x" * 100, encoding="utf-8")
+    monkeypatch.setattr(docs_module, "MAX_FILES", 2)
+    with pytest.raises(DocsError, match="3 ficheros"):
+        collect(tmp_path)
+    monkeypatch.setattr(docs_module, "MAX_FILES", 10)
+    monkeypatch.setattr(docs_module, "MAX_FILE_BYTES", 50)
+    with pytest.raises(DocsError, match=r"0\.md ocupa"):
+        collect(tmp_path)
+
+
+def test_a_damaged_zip_is_reported(tmp_path: Path) -> None:
+    (tmp_path / "roto.zip").write_bytes(b"esto no es un zip")
+    with pytest.raises(DocsError, match=r"roto\.zip no es un \.zip válido"):
+        collect(tmp_path)
+
+
+def test_invalid_utf8_is_replaced_not_fatal(tmp_path: Path) -> None:
+    (tmp_path / "latin.md").write_bytes("# Año\n".encode("latin-1"))
+    [(name, text)] = collect(tmp_path)["docs"]
+    assert name == "latin.md"
+    assert "\ufffd" in text

@@ -66,7 +66,9 @@ api index-docs -x 'whatsnew/*'    # omitiendo rutas (patrón fnmatch, repetible)
 ```
 
 - Cada carpeta o `.zip` del directorio es una **fuente**; los ficheros sueltos forman
-  la fuente `docs`.
+  la fuente `docs`. Dos entradas con el mismo nombre (`foo/` y `foo.zip`) son un error.
+- Límites por fuente: 20 MiB por fichero y 512 MiB o 20 000 ficheros de texto en total
+  (descomprimidos); lo que los supera se rechaza antes de leerlo.
 - El texto se trocea por secciones (encabezados) y cada fragmento guarda su fichero y
   línea.
 - Los `.zip` se extraen (solo los textos) a `docs-cache/`, junto a la base de datos,

@@ -13,6 +13,14 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   (`pkgutil.walk_packages` no lo captura); ahora se omite con un aviso.
 - La sonda de `--python` ya no puede quedarse colgada: se cancela a los 10 minutos y
   recibe la entrada estándar vacía (un `input()` al importar no la bloquea).
+- `api index-docs` con una carpeta `foo/` y un `foo.zip` (o una carpeta `docs/` y
+  ficheros sueltos) sustituía una fuente por otra en silencio; ahora da un error.
+- Un `.zip` dañado de `api index-docs` da un error legible en vez de una traza.
+
+### Añadido
+
+- Límites de tamaño en `api index-docs` (20 MiB por fichero, 512 MiB y 20 000
+  ficheros por fuente) contra bombas zip y carpetas equivocadas.
 
 ### Cambiado
 

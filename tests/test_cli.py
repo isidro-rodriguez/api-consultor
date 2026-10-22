@@ -163,6 +163,18 @@ def test_index_docs_rejects_missing_directory() -> None:
     assert result.exit_code == 2
 
 
+def test_index_docs_reports_colliding_sources(
+    docs: Path, stub_ollama: StubOllama
+) -> None:
+    with zipfile.ZipFile(docs.parent / "mis-notas.zip", "w") as zf:
+        zf.writestr("x.md", "# X\n")
+    result = runner.invoke(app, ["index-docs"])
+    assert result.exit_code == 1
+    flat = "".join(c for c in result.output if c not in "│─╭╮╰╯" and not c.isspace())
+    assert "«mis-notas»" in flat
+    assert "Renombrauna" in flat
+
+
 def test_index_docs_exclude_patterns(docs: Path, stub_ollama: StubOllama) -> None:
     result = runner.invoke(app, ["index-docs", "-x", "*.md"])
     assert result.exit_code == 0

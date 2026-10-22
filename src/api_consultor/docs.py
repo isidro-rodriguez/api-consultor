@@ -21,8 +21,56 @@ _SETEXT = re.compile(r'^([=\-*^~"+`#])\1{2,}\s*$')
 _ATX = re.compile(r"^#{1,6}\s+(\S.*?)\s*#*\s*$")
 _VERSION = re.compile(r"\d+(?:\.\d+)+")
 
+MAX_FILE_BYTES = 20 * 2**20
+"""Tamaño máximo de un fichero de documentación (descomprimido)."""
+
+MAX_SOURCE_BYTES = 512 * 2**20
+"""Tamaño máximo de una fuente de documentación (descomprimida)."""
+
+MAX_FILES = 20_000
+"""Número máximo de ficheros de texto en una fuente."""
+
 type Files = list[tuple[str, str]]
 """Ficheros de una fuente: pares (ruta relativa, texto)."""
+
+
+class DocsError(Exception):
+    """La documentación no se puede indexar tal como está.
+
+    Args:
+        message: Qué ocurre.
+        hint: Cómo solucionarlo, si se sabe.
+
+    Attributes:
+        hint: Sugerencia para el usuario, o `None`.
+    """
+
+    def __init__(self, message: str, hint: str | None = None) -> None:
+        super().__init__(message)
+        self.hint = hint
+
+
+def _check_limits(source: Path, sizes: Sequence[tuple[str, int]]) -> None:
+    """Rechaza fuentes desmesuradas (p. ej. una bomba zip) antes de leerlas."""
+    hint = "Revisa que sea la documentación que querías o divídela en varias fuentes."
+    if len(sizes) > MAX_FILES:
+        message = (
+            f"{source.name} tiene {len(sizes)} ficheros de texto (máximo {MAX_FILES})."
+        )
+        raise DocsError(message, hint)
+    for name, size in sizes:
+        if size > MAX_FILE_BYTES:
+            message = (
+                f"{source.name}: {name} ocupa {size / 2**20:.0f} MiB "
+                f"(máximo {MAX_FILE_BYTES // 2**20} MiB por fichero)."
+            )
+            raise DocsError(message, hint)
+    if (total := sum(size for _name, size in sizes)) > MAX_SOURCE_BYTES:
+        message = (
+            f"{source.name} ocupa {total / 2**20:.0f} MiB de texto "
+            f"(máximo {MAX_SOURCE_BYTES // 2**20} MiB por fuente)."
+        )
+        raise DocsError(message, hint)
 
 
 def _decode(data: bytes) -> str:
@@ -43,8 +91,19 @@ def _zip_members(zf: zipfile.ZipFile) -> list[tuple[str, str]]:
 
 
 def _read_zip(path: Path) -> Files:
-    with zipfile.ZipFile(path) as zf:
-        return [(rel, _decode(zf.read(name))) for rel, name in _zip_members(zf)]
+    try:
+        with zipfile.ZipFile(path) as zf:
+            members = _zip_members(zf)
+            # `file_size` es fiable: `zipfile` no lee más allá de lo declarado.
+            _check_limits(
+                path, [(rel, zf.getinfo(name).file_size) for rel, name in members]
+            )
+            return [(rel, _decode(zf.read(name))) for rel, name in members]
+    except zipfile.BadZipFile as exc:
+        message = f"{path.name} no es un .zip válido ({exc})."
+        raise DocsError(
+            message, "Vuelve a descargarlo o quítalo de la carpeta."
+        ) from exc
 
 
 def _extract_zip(path: Path, target: Path, exclude: Sequence[str]) -> Path:
@@ -65,11 +124,24 @@ def _extract_zip(path: Path, target: Path, exclude: Sequence[str]) -> Path:
 
 
 def _read_dir(path: Path) -> Files:
-    return [
-        (file.relative_to(path).as_posix(), _decode(file.read_bytes()))
+    files = [
+        file
         for file in sorted(path.rglob("*"))
         if file.is_file() and file.suffix.lower() in SUFFIXES
     ]
+    _check_limits(path, [(file.name, file.stat().st_size) for file in files])
+    return [
+        (file.relative_to(path).as_posix(), _decode(file.read_bytes()))
+        for file in files
+    ]
+
+
+def _add(sources: dict[str, Files], name: str, files: Files, entry: str) -> None:
+    if name in sources:
+        message = f"Dos entradas dan la fuente «{name}»: {entry} y otra carpeta o .zip."
+        hint = "Renombra una: el nombre de la carpeta o del .zip es el de la fuente."
+        raise DocsError(message, hint)
+    sources[name] = files
 
 
 def collect(docs_dir: Path) -> dict[str, Files]:
@@ -82,20 +154,26 @@ def collect(docs_dir: Path) -> dict[str, Files]:
 
     Returns:
         Para cada fuente, sus ficheros de texto con ruta relativa.
+
+    Raises:
+        DocsError: Si dos entradas dan el mismo nombre de fuente (`foo/` y `foo.zip`),
+            un `.zip` está dañado o una fuente supera los límites de tamaño.
     """
     sources: dict[str, Files] = {}
-    loose: Files = []
+    loose: list[Path] = []
     for entry in sorted(docs_dir.iterdir()):
         if entry.name.startswith("."):
             continue
         if entry.is_dir():
-            sources[entry.name] = _read_dir(entry)
+            _add(sources, entry.name, _read_dir(entry), f"{entry.name}/")
         elif entry.suffix.lower() == ".zip":
-            sources[entry.stem] = _read_zip(entry)
+            _add(sources, entry.stem, _read_zip(entry), entry.name)
         elif entry.suffix.lower() in SUFFIXES:
-            loose.append((entry.name, _decode(entry.read_bytes())))
+            loose.append(entry)
     if loose:
-        sources["docs"] = loose
+        _check_limits(docs_dir, [(file.name, file.stat().st_size) for file in loose])
+        files = [(file.name, _decode(file.read_bytes())) for file in loose]
+        _add(sources, "docs", files, "los ficheros sueltos")
     return sources
 
 
