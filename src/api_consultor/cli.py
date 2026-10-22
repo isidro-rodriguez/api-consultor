@@ -1,12 +1,21 @@
 """Interfaz de línea de comandos (Typer)."""
 
 import logging
+import os
 import platform
 import shutil
 import sqlite3
 import subprocess
-from collections.abc import Callable, Generator, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from collections.abc import (
+    Callable,
+    Collection,
+    Generator,
+    Iterator,
+    Mapping,
+    Sequence,
+)
+from contextlib import contextmanager, suppress
+from dataclasses import replace
 from functools import partial
 from importlib.resources import as_file
 from pathlib import Path
@@ -16,7 +25,7 @@ import ollama
 import sqlite_vec
 import typer
 from rich.logging import RichHandler
-from rich.progress import Progress
+from rich.progress import Progress, TaskID
 
 from . import __version__
 from .citations import check_citations
@@ -29,6 +38,7 @@ from .external import (
     extract_remote,
     is_own,
     remote_stdlib,
+    remote_versions,
     resolve_interpreter,
 )
 from .indexer import extract_package, stdlib_modules
@@ -36,7 +46,6 @@ from .llm import embed
 from .models import base_model, has_model, installed_models, modelfile
 from .records import Chunk, Extraction, SourceInfo, relativize
 from .render import (
-    err_console,
     print_error,
     print_hint,
     print_warning,
@@ -52,8 +61,9 @@ from .render import (
     status,
     stream_markdown,
     style_typer_help,
+    theme,
 )
-from .store import IndexIntegrityError, Store
+from .store import IndexIntegrityError, Store, content_hash
 from .userconfig import (
     UserConfig,
     UserConfigError,
@@ -69,7 +79,19 @@ from .versions import check_versions, collapse_stdlib
 BATCH_SIZE = 32
 """Fragmentos que se envían a Ollama por petición de embeddings."""
 
-style_typer_help()
+
+def _help_width() -> int:
+    """Ancho de la ayuda de Typer: el de `config.toml`, aunque aún no se haya leído.
+
+    `api --help` se pinta antes del callback que carga la configuración; un fichero
+    inválido se ignora aquí y lo notifica después ese callback.
+    """
+    with suppress(UserConfigError):
+        load().apply(SETTINGS)
+    return SETTINGS.console_width
+
+
+style_typer_help(_help_width)
 app = typer.Typer(
     name="api",
     help="Consultor de APIs Python offline con Ollama y RAG.",
@@ -129,7 +151,9 @@ def _setup(
     logging.basicConfig(
         level=logging.WARNING,
         format="%(message)s",
-        handlers=[RichHandler(console=err_console, show_path=False, show_time=False)],
+        handlers=[
+            RichHandler(console=theme.err_console, show_path=False, show_time=False)
+        ],
     )
 
 
@@ -171,35 +195,71 @@ def _handled_errors() -> Generator[None]:
         _fail(f"Error de Ollama: {exc.error}")
 
 
+def _embed_missing(
+    store: Store, chunks: Sequence[Chunk], progress: Progress, task: TaskID
+) -> list[list[float]]:
+    """Embeddings de los fragmentos, reutilizando los que ya están en el índice.
+
+    Solo se envían a Ollama los fragmentos cuyo texto es nuevo o ha cambiado.
+    """
+    cached = store.cached_embeddings(chunk.content for chunk in chunks)
+    hashes = [content_hash(chunk.content) for chunk in chunks]
+    pending = list(dict.fromkeys(h for h in hashes if h not in cached))
+    texts = {h: chunk.content for h, chunk in zip(hashes, chunks, strict=True)}
+    progress.update(task, total=len(chunks), completed=len(chunks) - len(pending))
+    for start in range(0, len(pending), BATCH_SIZE):
+        batch = pending[start : start + BATCH_SIZE]
+        vectors = embed([texts[h] for h in batch])
+        store.check_vector(vectors[0])  # falla pronto si el modelo no encaja
+        cached.update(zip(batch, vectors, strict=True))
+        progress.advance(task, len(batch))
+    return [cached[h] for h in hashes]
+
+
 def _index_source(
     store: Store,
     progress: Progress,
     name: str,
     build: Callable[[], Extraction],
     kind: str = "package",
+    module: str = "",
 ) -> SourceInfo | None:
-    """Extrae los chunks de una fuente, calcula sus embeddings y los guarda."""
+    """Extrae los chunks de una fuente, calcula sus embeddings y los guarda.
+
+    Args:
+        store: Índice abierto.
+        progress: Barra donde mostrar el avance.
+        name: Nombre de la fuente en el índice.
+        build: Extrae los fragmentos.
+        kind: `"package"`, `"stdlib"` o `"docs"`.
+        module: Paquete importable si difiere de `name`.
+
+    Returns:
+        El resumen de la fuente, o `None` si no había nada que indexar.
+    """
     task = progress.add_task(name, total=None)  # barra "pulsante" mientras se extrae
     try:
         extraction = build()
     except Exception:
         progress.remove_task(task)
         raise
-    chunks = extraction.chunks
+    chunks = [
+        chunk if chunk.package == name else replace(chunk, package=name)
+        for chunk in extraction.chunks
+    ]
     if not chunks:
         progress.remove_task(task)
         print_warning(f"{name}: nada indexable.")
         return None
-    progress.update(task, total=len(chunks), completed=0)
-    embeddings: list[list[float]] = []
-    for start in range(0, len(chunks), BATCH_SIZE):
-        batch = chunks[start : start + BATCH_SIZE]
-        embeddings.extend(embed([chunk.content for chunk in batch]))
-        if start == 0:
-            store.check_vector(embeddings[0])  # falla pronto si el modelo no encaja
-        progress.update(task, completed=len(embeddings))
+    embeddings = _embed_missing(store, chunks, progress, task)
     store.replace(
-        name, chunks, embeddings, kind, root=extraction.root, python=extraction.python
+        name,
+        chunks,
+        embeddings,
+        kind,
+        root=extraction.root,
+        python=extraction.python,
+        module=module,
     )
     return SourceInfo(
         name,
@@ -208,13 +268,18 @@ def _index_source(
         kind,
         root=extraction.root,
         python=extraction.python,
+        module=module,
     )
 
 
 def _index_packages(
     store: Store, packages: Sequence[str], python: str = "", kind: str = "package"
 ) -> list[SourceInfo]:
-    """Indexa paquetes del entorno de la herramienta o, con `python`, de otro."""
+    """Indexa paquetes del entorno de la herramienta o, con `python`, de otro.
+
+    Cada paquete se guarda con el nombre que le da `Store.source_name`: el mismo
+    paquete indexado desde otro entorno no sustituye al anterior.
+    """
     remote = not is_own(python)
     results: list[SourceInfo] = []
     with progress_bar() as progress, _handled_errors():
@@ -224,14 +289,13 @@ def _index_packages(
                 if remote
                 else partial(extract_package, package)
             )
+            name = store.source_name(package, python if remote else "")
             try:
-                info = _index_source(store, progress, package, build, kind)
+                info = _index_source(store, progress, name, build, kind, package)
             except ModuleNotFoundError as exc:
-                where = f"en {python}" if remote else "en el entorno de la herramienta"
                 print_warning(
                     f"{package}: módulo no encontrado ({exc.name}).",
-                    f"¿Está instalado {where}? "
-                    "Indica el entorno del proyecto con `--python .venv`.",
+                    _missing_hint(package, python if remote else None),
                 )
                 continue
             except ProbeError as exc:
@@ -243,6 +307,54 @@ def _index_packages(
             if info:
                 results.append(info)
     return results
+
+
+def _project_environment() -> Path | None:
+    """Venv del proyecto actual, distinto del de la herramienta, si lo hay.
+
+    Prueba el entorno activo (`VIRTUAL_ENV`) y después `./.venv`.
+    """
+    for candidate in (os.environ.get("VIRTUAL_ENV", ""), ".venv"):
+        if not candidate or not Path(candidate).is_dir():
+            continue
+        try:
+            python = resolve_interpreter(Path(candidate))
+        except FileNotFoundError:
+            continue
+        if not is_own(str(python)):
+            return Path(candidate)
+    return None
+
+
+def _missing_hint(package: str, python: str | None) -> str:
+    """Pista para un paquete que no está en el entorno donde se buscó.
+
+    Si se buscó en el de la herramienta y está en el venv del proyecto, propone el
+    comando exacto para indexarlo desde allí.
+
+    Args:
+        package: Nombre importable.
+        python: Intérprete donde se buscó; `None` si fue el de la herramienta.
+    """
+    if python is not None:
+        return f"¿Está instalado en {python}? Revisa el entorno de `--python`."
+    generic = (
+        "¿Está instalado en el entorno de la herramienta? "
+        "Indica el entorno del proyecto con `--python .venv`."
+    )
+    venv = _project_environment()
+    if venv is None:
+        return generic
+    try:
+        found = remote_versions(str(resolve_interpreter(venv)), [package])
+    except ProbeError:
+        return generic
+    if found.get(package) is None:
+        return generic
+    return (
+        f"No está en el entorno de la herramienta, pero sí en {venv}: "
+        f"`api index {package} -p {venv}`."
+    )
 
 
 @app.command(
@@ -384,9 +496,47 @@ def _read_questions() -> Iterator[str]:
             yield line
 
 
-def _warn_stale(store: Store) -> frozenset[str]:
+def _select_sources(known: Sequence[SourceInfo], wanted: Sequence[str]) -> list[str]:
+    """Traduce los nombres de `--source` a fuentes del índice.
+
+    Se acepta el nombre de la fuente o el del paquete (todas sus fuentes, si está
+    indexado desde varios entornos); `stdlib` equivale a todos los módulos de la
+    biblioteca estándar indexados.
+
+    Args:
+        known: Fuentes del índice.
+        wanted: Nombres indicados por el usuario.
+
+    Returns:
+        Nombres de fuente, sin repetir.
+    """
+    names = {source.package for source in known}
+    selected: list[str] = []
+    unknown: list[str] = []
+    for item in wanted:
+        if item in names:
+            selected.append(item)
+        elif same := [s.package for s in known if s.module == item]:
+            selected.extend(same)  # el paquete, desde cualquier entorno
+        elif item == "stdlib" and (
+            every := [s.package for s in known if s.kind == "stdlib"]
+        ):
+            selected.extend(every)
+        else:
+            unknown.append(item)
+    if unknown:
+        _fail(
+            f"Fuente no indexada: {', '.join(unknown)}.",
+            "Consulta los nombres con `api sources` (`stdlib` incluye todos sus "
+            "módulos).",
+        )
+    return list(dict.fromkeys(selected))
+
+
+def _warn_stale(store: Store, only: Collection[str] | None = None) -> frozenset[str]:
     """Avisa de las fuentes cuya versión instalada difiere de la indexada."""
-    stale = [s for s in check_versions(store.sources()) if s.is_stale]
+    sources = [s for s in store.sources() if only is None or s.package in only]
+    stale = [s for s in check_versions(sources) if s.is_stale]
     if stale:
         details = ", ".join(
             f"{s.source.package} (indexada {s.source.version}, instalada {s.installed})"
@@ -456,23 +606,36 @@ def ask_command(
             "--debug", "-d", help="Muestra candidatos, señales y tamaño del contexto."
         ),
     ] = False,
+    source: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--source",
+            "-s",
+            metavar="FUENTE",
+            help="Busca solo en esta fuente (repetible). [muted](stdlib = todas)[/]",
+            show_default=False,
+        ),
+    ] = None,
 ) -> None:
     r"""Consulta lo indexado y responde con el modelo local.
 
     Combina búsqueda semántica y por palabras clave, y responde solo con los fragmentos
     recuperados, citándolos como [info]\[DOC-01][/]. Debajo muestra las fuentes y marca
-    las citadas; si no encuentra base suficiente, se abstiene en lugar de inventar. Sin
-    pregunta entra en modo interactivo ([muted]salir[/] o Ctrl+D para terminar).
+    las citadas; si no encuentra base suficiente, se abstiene en lugar de inventar. Con
+    [info]--source[/] la búsqueda se limita a esas fuentes. Sin pregunta entra en modo
+    interactivo ([muted]salir[/] o Ctrl+D para terminar).
     """
     with _store() as store:
-        if not store.sources():
+        known = store.sources()
+        if not known:
             _fail(
                 "No hay nada indexado todavía.",
                 "Usa `api index <paquete>`, `api index --stdlib` o `api index-docs`.",
             )
-        stale = _warn_stale(store)
-        roots = {source.package: source.root for source in store.sources()}
-        consultor = Consultor(store)
+        only = None if source is None else _select_sources(known, source)
+        stale = _warn_stale(store, only)
+        roots = {info.package: info.root for info in known}
+        consultor = Consultor(store, only)
         interactive = question is None or not question.strip()
         questions: Sequence[str] | Iterator[str] = (
             _read_questions() if interactive else [question]
@@ -566,7 +729,7 @@ def _update_sources(store: Store) -> None:
     results: list[SourceInfo] = []
     for python, kind in dict.fromkeys((s.source.python, s.source.kind) for s in stale):
         names = [
-            s.source.package
+            s.source.import_name
             for s in stale
             if (s.source.python, s.source.kind) == (python, kind)
         ]

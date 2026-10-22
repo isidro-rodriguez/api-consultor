@@ -8,9 +8,8 @@ from typer.testing import CliRunner
 from api_consultor import render
 from api_consultor.cli import app
 from api_consultor.config import SETTINGS, default_docs_dir, user_data_dir
-from api_consultor.docs import import_docs
 from api_consultor.records import Chunk, relativize
-from api_consultor.store import Store
+from api_consultor.store import FORMAT_VERSION, Store
 
 from .conftest import EMBED_DIM, StubOllama
 
@@ -73,7 +72,7 @@ def test_v3_index_is_migrated_to_relative_paths(v3_index: Path, tmp_path: Path) 
     with Store(v3_index, EMBED_DIM) as store:
         roots = {s.package: s.root for s in store.sources()}
         paths = {name: store.paths(name) for name in roots}
-        assert store.meta()["format_version"] == "4"
+        assert store.meta()["format_version"] == str(FORMAT_VERSION)
     site = str(tmp_path / "venv" / "site-packages")
     notes = str(tmp_path / "docs" / "notas")
     normalized = {name: Path(root) if root else None for name, root in roots.items()}
@@ -96,26 +95,6 @@ def test_relocate_changes_only_the_root(tmp_path: Path) -> None:
         assert not store.relocate("no-existe", "/nuevo")
         assert [s.root for s in store.sources()] == ["/nuevo"]
         assert store.paths("a") == ["f.md"]
-
-
-def test_import_docs_copies_documentation_and_skips_the_rest(tmp_path: Path) -> None:
-    source = tmp_path / "origen"
-    (source / "guia").mkdir(parents=True)
-    (source / "guia" / "a.md").write_text("# A\n", encoding="utf-8")
-    (source / "guia" / ".oculto").mkdir()
-    (source / "manual.zip").write_bytes(b"zip")
-    (source / "suelto.rst").write_text("x", encoding="utf-8")
-    (source / "foto.png").write_bytes(b"png")
-    (source / ".git").mkdir()
-    target = tmp_path / "destino" / "docs"
-    assert import_docs(source, target) == 3
-    assert sorted(path.name for path in target.iterdir()) == [
-        "guia",
-        "manual.zip",
-        "suelto.rst",
-    ]
-    assert not (target / "guia" / ".oculto").exists()
-    assert import_docs(source, target) == 3  # idempotente
 
 
 @pytest.fixture

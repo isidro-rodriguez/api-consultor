@@ -40,6 +40,9 @@ class SourceInfo:
         root: Carpeta que contiene los ficheros de la fuente; vacía si se desconoce.
         python: Intérprete del entorno donde se indexó el paquete; vacío si fue el
             de la propia herramienta.
+        module: Nombre importable del paquete; vacío si coincide con `package`. Se
+            distinguen cuando el mismo paquete está indexado desde dos entornos
+            (`zensical` y `zensical@reCocina`).
     """
 
     package: str
@@ -49,6 +52,12 @@ class SourceInfo:
     indexed_at: str = field(default="", compare=False)
     root: str = field(default="", compare=False)
     python: str = field(default="", compare=False)
+    module: str = field(default="", compare=False)
+
+    @property
+    def import_name(self) -> str:
+        """Nombre con el que se importa el paquete (para versiones y reindexado)."""
+        return self.module or self.package
 
 
 @dataclass(frozen=True, slots=True)

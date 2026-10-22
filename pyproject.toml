@@ -1,6 +1,6 @@
 [project]
 name = "api-consultor"
-version = "0.3.0"
+version = "0.4.0"
 description = "Consultor de APIs Python offline con Ollama y RAG"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -36,7 +36,7 @@ dependencies = [
     "pyfiglet>=1.0",
     "rich>=15.0.0",
     "sqlite-vec>=0.1.6",
-    "typer>=0.27.3",
+    "typer>=0.27.3,<0.28", # render/typer_help.py parchea API privada
 ]
 
 [project.urls]
@@ -92,6 +92,7 @@ all = "error"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers --strict-config --cov=api_consultor --cov-report=term-missing:skip-covered"
+filterwarnings = ["error::ResourceWarning"]                                                                 # índices y ficheros sin cerrar
 
 [tool.coverage.run]
 branch = true

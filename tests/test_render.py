@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from functools import partial
 from io import StringIO
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from typer import rich_utils
 
 from api_consultor import render
 from api_consultor.citations import Citations
+from api_consultor.config import SETTINGS
 from api_consultor.consultor import Candidate, Retrieval
 from api_consultor.evaluation import EvalCase, evaluate
 from api_consultor.store import Chunk, SourceInfo
@@ -24,8 +26,8 @@ def capture(monkeypatch: pytest.MonkeyPatch) -> Capture:
     def factory(width: int = 200) -> StringIO:
         buffer = StringIO()
         out = Console(file=buffer, width=width, theme=render.THEME, color_system=None)
-        monkeypatch.setattr(render, "console", out)
-        monkeypatch.setattr(render, "err_console", out)
+        monkeypatch.setattr(render.theme, "console", out)
+        monkeypatch.setattr(render.theme, "err_console", out)
         return buffer
 
     return factory
@@ -38,7 +40,7 @@ def test_markdown_never_exceeds_max_width(capture: Capture) -> None:
     buffer = capture(200)
     render.stream_markdown([f"## Título\n\n{LONG}\n\n```python\n{'x = 1  ' * 30}\n```"])
     lines = buffer.getvalue().splitlines()
-    assert max(len(line) for line in lines) <= render.SETTINGS.console_width
+    assert max(len(line) for line in lines) <= SETTINGS.console_width
 
 
 def test_markdown_adapts_to_narrow_terminals(capture: Capture) -> None:
@@ -102,7 +104,7 @@ def test_show_version_renders_banner_version_and_details(capture: Capture) -> No
     assert "v1.2.3" in text
     assert "Python" in text
     assert "/_/" in text  # arte figlet
-    assert max(len(line) for line in text.splitlines()) <= render.SETTINGS.console_width
+    assert max(len(line) for line in text.splitlines()) <= SETTINGS.console_width
 
 
 def test_show_version_falls_back_to_plain_name_in_narrow_terminals(
@@ -157,7 +159,7 @@ def test_show_sources_links_names_when_a_link_is_given(
         color_system="standard",
         legacy_windows=False,  # el modo heredado de Windows no emite hipervínculos
     )
-    monkeypatch.setattr(render, "console", out)
+    monkeypatch.setattr(render.theme, "console", out)
     chunks = [Chunk("a.f", "a", "1", "x", "/p/a.py", 3), Chunk("a.g", "a", "1", "y")]
     render.show_sources(chunks, link=lambda c: f"file://{c.path}" if c.path else None)
     text = buffer.getvalue()
@@ -209,14 +211,27 @@ def test_data_that_looks_like_markup_is_printed_literally(capture: Capture) -> N
 def test_typer_help_console_knows_theme_styles() -> None:
     render.style_typer_help()
     help_console = rich_utils._get_rich_console()
-    assert help_console.get_style("info") == Style.parse(render.BLUE)
+    assert help_console.get_style("info") == Style.parse(render.theme.BLUE)
     assert help_console.get_style("option") == Style.parse(rich_utils.STYLE_OPTION)
 
 
 def test_style_typer_help_is_idempotent() -> None:
     render.style_typer_help()
     render.style_typer_help()
-    assert rich_utils._get_rich_console is render._themed_console
+    patched = rich_utils._get_rich_console
+    assert isinstance(patched, partial)
+    assert patched.func is render.typer_help._themed_console
+
+
+def test_typer_help_width_is_read_when_the_help_is_drawn() -> None:
+    width = 40
+    render.style_typer_help(lambda: width)
+    try:
+        assert rich_utils._get_rich_console().width <= 40
+        width = 30
+        assert rich_utils._get_rich_console().width <= 30
+    finally:
+        render.style_typer_help()
 
 
 def test_typer_help_paragraphs_are_reflowed() -> None:

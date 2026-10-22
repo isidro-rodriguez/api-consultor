@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from api_consultor import external, probe
+from api_consultor import external, probe, render
 from api_consultor.cli import app
 from api_consultor.config import SETTINGS
 from api_consultor.external import (
@@ -333,3 +333,105 @@ def test_remote_stdlib_rejects_unexpected_answers(
     monkeypatch.setattr(external.subprocess, "run", fake_run)
     with pytest.raises(ProbeError, match="viejo"):
         remote_stdlib("python")
+
+
+def _flat(text: str) -> str:
+    """Texto de los paneles sin bordes ni saltos de línea."""
+    return " ".join(text.translate(str.maketrans(dict.fromkeys("│─╭╮╰╯", " "))).split())
+
+
+@pytest.fixture
+def in_project(venv_dir: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Proyecto con `.venv` (el entorno ajeno de los tests) y sin venv activo."""
+    monkeypatch.chdir(venv_dir.parent)
+    monkeypatch.delenv("VIRTUAL_ENV", raising=False)
+    return venv_dir.parent
+
+
+def test_missing_package_suggests_the_project_venv(
+    in_project: Path, foreign: Callable[[str, str], Path], stub_ollama: StubOllama
+) -> None:
+    foreign("solo_en_venv", CODE)
+    result = runner.invoke(app, ["index", "solo_en_venv"])
+    assert result.exit_code == 0
+    assert "`api index solo_en_venv -p .venv`" in _flat(result.output)
+
+
+def test_missing_package_uses_the_active_venv(
+    venv_dir: Path,
+    foreign: Callable[[str, str], Path],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    stub_ollama: StubOllama,
+) -> None:
+    foreign("solo_en_venv", CODE)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("VIRTUAL_ENV", str(venv_dir))
+    result = runner.invoke(app, ["index", "solo_en_venv"])
+    assert f"-p {venv_dir}`" in _flat(result.output)
+
+
+def test_missing_everywhere_keeps_the_generic_hint(
+    in_project: Path, stub_ollama: StubOllama
+) -> None:
+    result = runner.invoke(app, ["index", "no_esta_xyz"])
+    text = _flat(result.output)
+    assert "--python .venv" in text
+    assert "api index no_esta_xyz -p" not in text
+
+
+def test_project_venv_is_ignored_when_it_is_the_tool_itself(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stub_ollama: StubOllama
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("VIRTUAL_ENV", str(Path(sys.executable).parent.parent))
+    monkeypatch.setattr(
+        external.sys,
+        "executable",
+        str(resolve_interpreter(Path(sys.executable).parent.parent)),
+    )
+    result = runner.invoke(app, ["index", "no_esta_xyz"])
+    text = _flat(result.output)
+    assert "no encontrado" in text
+    assert "api index no_esta_xyz -p" not in text
+
+
+def test_a_broken_project_venv_falls_back_to_the_generic_hint(
+    in_project: Path, monkeypatch: pytest.MonkeyPatch, stub_ollama: StubOllama
+) -> None:
+    def broken(*_args: object) -> dict[str, str | None]:
+        raise ProbeError("rota")
+
+    monkeypatch.setattr("api_consultor.cli.remote_versions", broken)
+    result = runner.invoke(app, ["index", "no_esta_xyz"])
+    assert "--python .venv" in _flat(result.output)
+
+
+def test_progress_and_warnings_share_the_error_console() -> None:
+    assert render.progress_bar().console is render.theme.err_console
+
+
+def test_the_same_package_from_two_environments_keeps_both(
+    venv_dir: Path,
+    foreign: Callable[[str, str], Path],
+    make_package: PackageFactory,
+    stub_ollama: StubOllama,
+) -> None:
+    name = make_package("doble_pkg", {"__init__.py": CODE})
+    foreign(name, CODE)
+    assert runner.invoke(app, ["index", name]).exit_code == 0
+    result = runner.invoke(app, ["index", name, "-p", str(venv_dir)])
+    assert result.exit_code == 0, result.output
+    label = venv_dir.parent.name
+    with Store(SETTINGS.db_path, EMBED_DIM) as store:
+        sources = {s.package: s for s in store.sources()}
+    assert set(sources) == {name, f"{name}@{label}"}
+    assert sources[f"{name}@{label}"].import_name == name
+    statuses = check_versions(list(sources.values()))
+    assert {status.state for status in statuses} == {"ok", "missing"}
+    # Reindexar desde el venv sustituye su propia fuente, no la de la herramienta.
+    assert runner.invoke(app, ["index", name, "-p", str(venv_dir)]).exit_code == 0
+    with Store(SETTINGS.db_path, EMBED_DIM) as store:
+        assert len(store.sources()) == 2
+    answer = runner.invoke(app, ["ask", "-s", name, "¿saluda?"])
+    assert answer.exit_code == 0, answer.output

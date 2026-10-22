@@ -26,6 +26,7 @@ api index pygame -p .venv         # ... o de un entorno virtual de tu proyecto
 api index --stdlib                # biblioteca estándar
 api index-docs [CARPETA]          # documentación local
 api ask                           # entra en chat interactivo
+api ask -s requests "..."         # pregunta solo sobre una fuente (repetible)
 api sources                       # qué hay indexado (--update, --remove, --relocate)
 ```
 

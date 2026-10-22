@@ -5,9 +5,27 @@ Todos los cambios relevantes de este proyecto se documentan aquí.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el
 proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
-## [Sin publicar]
+## [0.4.0] - 2026-10-22
+
+### Añadido
+
+- `api ask --source/-s FUENTE` (repetible) limita la búsqueda a esas fuentes; acepta
+  el nombre de la fuente, el del paquete (todas sus fuentes) o `stdlib`.
+- Caché de embeddings: al reindexar (`api sources -u`, `api index`, `api index-docs`)
+  solo se calculan los fragmentos nuevos o cambiados; el resto reutiliza su vector.
+- Si un paquete no está en el entorno de la herramienta pero sí en el venv activo o en
+  `./.venv`, el aviso sugiere el comando exacto (`api index X -p .venv`).
 
 ### Cambiado
+
+- Formato de índice 5 (`chunks.hash`, `sources.module`); un índice anterior se migra
+  solo al abrirlo, sin reindexar.
+- El mismo paquete indexado desde otro entorno se guarda como otra fuente
+  (`zensical@reCocina`) en vez de sustituir la anterior. Tampoco sustituye ya una
+  fuente de documentación con el mismo nombre.
+- `render.py` pasa a ser el paquete `render/` (tema, ayuda de Typer, mensajes,
+  respuesta y tablas); los parches de API privada de Typer quedan aislados en
+  `render/typer_help.py` y la dependencia se acota a `typer<0.28`.
 
 - README reducido a instalación (desde PyPI), uso, configuración y desarrollo; el
   detalle pasa a `docs/` (uso, configuración, funcionamiento, evaluación y desarrollo).
@@ -22,6 +40,15 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   con un aviso, igual que cualquier otro fallo de importación.
 - Si la sonda no devuelve JSON y stderr está vacío, el error muestra la última
   línea de su salida en vez de «sin salida».
+- Los avisos de `api index` salían pegados a la barra de progreso: la barra va ahora
+  por la salida de error, como los avisos, y Rich los pinta por encima.
+- `[display] width` de `config.toml` se aplica también a `--help`.
+- Las etiquetas `<docs>`/`</docs>` dentro de un fragmento se escapan al enviarlo al
+  modelo, para que no cierren su bloque de contexto.
+
+### Eliminado
+
+- `docs.import_docs` (sin uso desde que `api index-docs` indexa en su sitio).
 
 ## [0.3.0] - 2026-10-21
 

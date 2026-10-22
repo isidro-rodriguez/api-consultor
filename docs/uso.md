@@ -42,6 +42,14 @@ api index --stdlib -p .venv     # la stdlib de otra versión de Python
   en varios fragmentos (`nombre [2]`, `nombre [3]`…), sin perder texto.
 - **Versión.** Se resuelve por la distribución instalada (`yaml` → PyYAML); la de la
   stdlib es la de Python. Cada fuente recuerda su entorno para comprobarla después.
+- **Mismo paquete, varios entornos.** Indexarlo desde otro entorno crea otra fuente
+  (`zensical@reCocina`) y no sustituye la anterior; ver
+  [identidad de las fuentes](funcionamiento.md#identidad-de-las-fuentes).
+- **Reindexar es barato.** Solo se calculan los embeddings de los fragmentos nuevos o
+  cambiados ([caché](funcionamiento.md#caché-de-embeddings)).
+- **Paquete no encontrado.** Si no está en el entorno de la herramienta pero sí en el
+  venv activo o en `./.venv`, el aviso indica el comando exacto
+  (`api index zensical -p .venv`).
 
 ## `api index-docs`: documentación local
 
@@ -68,7 +76,12 @@ api index-docs -x 'whatsnew/*'    # omitiendo rutas (patrón fnmatch, repetible)
 api ask "¿cómo hago un POST con timeout?"
 api ask                  # modo interactivo (salir o Ctrl+D para terminar)
 api ask -d "..."         # --debug: candidatos, señales, distancias y tamaño del contexto
+api ask -s requests "¿cómo pongo un timeout?"   # solo en esa fuente (repetible)
+api ask -s stdlib -s mis-notas "..."            # toda la stdlib y una carpeta de docs
 ```
+
+`-s/--source` acepta el nombre de una fuente (`api sources`), el de un paquete (todas
+sus fuentes, si está indexado desde varios entornos) o `stdlib`.
 
 La respuesta se genera **solo** con los fragmentos recuperados y los cita como
 `[DOC-01]`. Debajo aparece el panel «Fuentes»:

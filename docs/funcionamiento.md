@@ -40,6 +40,22 @@ SQLite con las extensiones `sqlite-vec` (vectores) y FTS5 (texto completo).
 4. **Almacén.** Se guardan texto, vector e índice FTS5, y una fila por fuente con su
    tipo, versión, entorno, raíz y fecha.
 
+### Caché de embeddings
+
+Cada fragmento guarda el hash (SHA-256) de su texto. Al reindexar, los fragmentos
+cuyo texto ya está en el índice reutilizan su vector y solo los nuevos o cambiados
+se envían a Ollama: actualizar un paquete con pocos cambios o repetir
+`api index-docs` es casi instantáneo. El índice usa un único modelo de embeddings
+(validado al abrirlo), así que el mismo texto siempre tiene el mismo vector.
+
+### Identidad de las fuentes
+
+Una fuente de paquete se identifica por el paquete **y** el entorno desde el que se
+indexó. La primera vez recibe el nombre del paquete; si ese nombre ya lo usa el mismo
+paquete de otro entorno (o una fuente de documentación), se le añade la etiqueta del
+entorno: la carpeta del proyecto que contiene el venv (`zensical@reCocina`) o
+`herramienta`. Reindexar desde el mismo entorno sustituye su propia fuente.
+
 ## Recuperación
 
 Cada pregunta se busca por cuatro vías, cada una con su peso:
@@ -78,7 +94,7 @@ ninguna cita.
 
 - El índice registra el modelo y la dimensión de los embeddings: con otros distintos se
   niega a insertar o consultar y explica cómo reconstruirlo.
-- El formato está versionado (actualmente 4). Un índice anterior se migra solo al
+- El formato está versionado (actualmente 5). Un índice anterior se migra solo al
   abrirlo, sin reindexar.
 - Las rutas se guardan relativas a la raíz de cada fuente; si la carpeta se mueve,
   `api sources --relocate` la recoloca.
@@ -90,10 +106,10 @@ ninguna cita.
 - La calidad depende de la documentación: los símbolos sin docstring no se indexan.
 - Un docstring repartido en varios fragmentos puede llegar al modelo solo en parte.
 - Sin `max_distance` siempre se responde con lo recuperado, aunque sea poco relevante.
-- El nombre de la fuente es el del paquete: indexarlo desde dos entornos distintos
-  sustituye la fuente anterior.
 - La sonda de `--python` necesita Python 3.12+ en el entorno objetivo.
 - Un paquete sin metadatos de distribución aparece como «no instalada».
-- Cada `api index-docs` vuelve a extraer los `.zip` completos y recalcula todos los
-  embeddings de la fuente.
-- `[display] width` aún no se aplica a la ayuda de `--help`.
+- Cada `api index-docs` vuelve a extraer los `.zip` completos (los embeddings sí
+  se reutilizan).
+- Indexar la stdlib desde otro intérprete añade sus módulos como fuentes nuevas
+  (`json@Poker`): si no quieres ambas versiones, elimina una con
+  `api sources -r`.

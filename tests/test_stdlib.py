@@ -175,3 +175,12 @@ def test_setup_stdlib_answers(
     result = runner.invoke(app, args, input=input_)
     assert result.exit_code == 0, result.output
     assert len(sources()) == expected
+
+
+def test_ask_stdlib_alias_selects_every_module(
+    two_modules: list[str], stub_ollama: StubOllama
+) -> None:
+    assert runner.invoke(app, ["index", "--stdlib"]).exit_code == 0
+    result = runner.invoke(app, ["ask", "-s", "stdlib", "¿json.dumps?"])
+    assert result.exit_code == 0, result.output
+    assert "Fuentes" in result.output
