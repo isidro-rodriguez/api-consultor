@@ -626,6 +626,41 @@ class Store:
                 found.extend(Chunk(*row) for row in rows)
         return found
 
+    def mentions(
+        self,
+        owners: Iterable[str],
+        word: str,
+        name: str,
+        sources: Collection[str] | None = None,
+    ) -> bool:
+        """Indica si el índice menciona un símbolo aunque no lo tenga como fragmento.
+
+        Sirve para no tomar por inexistente algo sin docstring propio: `sys.argv` o
+        `re.IGNORECASE` aparecen en el texto de su módulo.
+
+        Args:
+            owners: Símbolos dueños (p. ej. `json`, `pathlib.Path`) cuyo texto o el de
+                sus miembros se revisa.
+            word: Nombre corto que se busca en ese texto (`argv`).
+            name: Nombre completo que basta encontrar en cualquier fragmento.
+            sources: Limita la búsqueda a estas fuentes; `None` para todas.
+
+        Returns:
+            `True` si algún fragmento de los dueños contiene `word`, o alguno contiene
+            `name` (distinguiendo mayúsculas).
+        """
+        where, params = _only(sources)
+        families = sorted(set(owners))
+        family = " OR ".join("qualname = ? OR qualname GLOB ?" for _ in families)
+        family_params = [v for owner in families for v in (owner, f"{owner}.*")]
+        condition = f"instr(content, ?) > 0 AND ({family})" if families else "0"
+        row = self._db.execute(
+            f"SELECT 1 FROM chunks WHERE (({condition}) OR instr(content, ?) > 0)"
+            f"{where} LIMIT 1",
+            (*([word, *family_params] if families else []), name, *params),
+        ).fetchone()
+        return row is not None
+
     def lexical(
         self, query: str, limit: int, sources: Collection[str] | None = None
     ) -> list[Chunk]:

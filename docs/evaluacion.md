@@ -28,15 +28,21 @@ marca esas preguntas con `expected = []`. `api eval` añade entonces una secció
 **Abstención** que cuenta, para el `max_distance` configurado:
 
 - **responde X/N sin respuesta:** respuestas falsas, la cifra que hay que bajar;
-- **calla Y/M con respuesta:** preguntas buenas que el umbral dejaría sin responder.
+- **calla Y/M con respuesta:** preguntas buenas que el umbral dejaría sin responder
+  (solo cuentan las que la recuperación acierta: callar una que iba a fallar no se
+  pierde nada).
 
 Y propone un **umbral sugerido**: el que mejor separa ambos grupos (a igualdad,
 el de menos respuestas falsas), con una línea lista para `config.toml`. Necesita
 varias preguntas de cada tipo; con pocas, tómalo como orientación. La recuperación se
 mide siempre sin abstención, así que R@k no cambia al probar umbrales.
 
-Las preguntas que coinciden por nombre con algún símbolo indexado se responden con
-cualquier umbral (aparecen como «nombre» en la tabla): el umbral no puede detenerlas.
+Las preguntas por un símbolo cualificado inexistente se abstienen siempre
+(«inexistente» en la tabla). Las que coinciden por nombre con algún símbolo indexado se
+responden con cualquier umbral («nombre»): el umbral no puede detenerlas.
+
+Una negativa solo vale si el índice de verdad no la responde: con la stdlib entera o
+más paquetes indexados, «enviar un correo» tiene respuesta (`email`).
 
 ## Formato de los casos
 

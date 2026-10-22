@@ -120,7 +120,9 @@ expected = ["json.dumps|library/json.txt#*"]
 # --- Sin respuesta en el índice: lo correcto es abstenerse -------------------------
 # `expected = []`: APIs inexistentes o temas ajenos. Miden las respuestas falsas y
 # sirven a `api eval` para sugerir `max_distance`. Añade las tuyas: cuantas más, mejor
-# calibrado.
+# calibrado. Ojo: con más paquetes indexados (o la stdlib entera), una pregunta «ajena»
+# puede tener respuesta de verdad (`email` para correos): esa no vale como negativa.
+# Las de nombre cualificado (`json.compress`) se detectan sin umbral: `inexistente`.
 
 [[case]]
 category = "sin-respuesta"
@@ -144,10 +146,10 @@ expected = []
 
 [[case]]
 category = "sin-respuesta"
-question = "enviar un correo electrónico con adjuntos"
+question = "¿Qué hace la función teleport de pathlib?"
 expected = []
 
 [[case]]
 category = "sin-respuesta"
-question = "dibujar un gráfico de barras con colores"
+question = "receta de paella valenciana"
 expected = []

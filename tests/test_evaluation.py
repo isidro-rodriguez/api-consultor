@@ -406,3 +406,41 @@ def test_eval_command_measures_abstention(indexed: Path) -> None:
     assert "Abstención" in flat
     assert "desactivada: responde 1/1 sin respuesta" in flat
     assert "receta de paella" in flat
+
+
+def test_forced_abstentions_hold_for_any_threshold_and_skip_the_suggestion() -> None:
+    cases = [
+        EvalCase("sí", ("a",)),
+        EvalCase("falla", ("zzz",)),  # la recuperación no da con la fuente
+        EvalCase("inventada", ()),
+    ]
+    found = {
+        "sí": Hits([chunk("a")], 0.2),
+        "falla": Hits([chunk("b")], 0.9),
+        "inventada": Hits([chunk("a")], 0.1, forced=True),
+    }
+    report = evaluate(lambda q, _k: found[q], cases, ks=(1,))
+    off = report.abstention(None)
+    assert (off.false_answers, off.lost) == (0, 0)
+    # Callar `falla` no es perder una respuesta: no se había recuperado su fuente.
+    assert report.abstention(0.5).lost == 0
+    assert report.abstention(0.1).lost == 1
+    assert report.suggest_threshold() is not None
+
+
+def test_show_evaluation_marks_nonexistent_symbols() -> None:
+    report = evaluate(
+        lambda q, _k: Hits([chunk("a")], 0.2, forced=q == "x.y"),
+        [EvalCase("q", ("a",)), EvalCase("x.y", ())],
+        ks=(1,),
+    )
+    buffer = StringIO()
+    original = render.theme.console
+    render.theme.console = Console(file=buffer, width=120, theme=render.THEME)
+    try:
+        render.show_evaluation(report, verbose=True)
+    finally:
+        render.theme.console = original
+    text = " ".join(buffer.getvalue().split())
+    assert "desactivada: responde 0/1 sin respuesta" in text
+    assert "inexistente" in text

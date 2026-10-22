@@ -60,6 +60,12 @@ def _lexical_query(question: str) -> str | None:
 _CONTINUATION = re.compile(r" \[\d+\]$")
 
 
+def _is_named(qualname: str, name: str) -> bool:
+    """Indica si un fragmento (`a.b.c`, `a.b.c [2]`) es el símbolo `name` o `b.c`."""
+    base = qualname.split(" [", 1)[0]
+    return base == name or base.endswith(f".{name}")
+
+
 def _symbol(chunk: Chunk) -> tuple[str, str]:
     """Símbolo al que pertenece un fragmento (las continuaciones `x [2]` son de `x`)."""
     return chunk.package, _CONTINUATION.sub("", chunk.qualname)
@@ -143,6 +149,8 @@ class Retrieval:
         best_distance: Menor distancia vectorial encontrada, si hubo.
         abstain_reason: Por qué no se responde, o `None` si se responde.
         name_match: Si algún símbolo coincide por nombre (entonces nunca se abstiene).
+        unknown: Nombres cualificados de la pregunta que no existen en el índice
+            aunque su dueño sí (`json.compress`): con ellos siempre se abstiene.
     """
 
     chunks: list[Chunk]
@@ -152,17 +160,21 @@ class Retrieval:
     best_distance: float | None = None
     abstain_reason: str | None = None
     name_match: bool = False
+    unknown: list[str] = field(default_factory=list)
 
     def hits(self) -> Hits:
         """Lo elegido sin aplicar la abstención, con su distancia (para `api eval`).
 
         Returns:
             Los fragmentos seleccionados y la distancia que decide la abstención:
-            `None` si hay coincidencia de nombre, `inf` si no hubo ningún vecino.
+            `None` si hay coincidencia de nombre, `inf` si no hubo ningún vecino;
+            `forced` si pregunta por un símbolo inexistente.
         """
         chosen = [
             candidate.chunk for candidate in self.candidates if candidate.selected
         ]
+        if self.unknown:
+            return Hits(chosen, math.inf, forced=True)
         if self.name_match:
             return Hits(chosen)
         best = math.inf if self.best_distance is None else self.best_distance
@@ -301,7 +313,12 @@ class Consultor:
         ]
         best = min(distances.values(), default=None)
         name_match = bool(qualified or short)
-        reason = self._abstain_reason(name_match, best)
+        unknown = self._unknown_names(names, qualified)
+        reason = (
+            f"{', '.join(unknown)} no aparece en el índice"
+            if unknown
+            else self._abstain_reason(name_match, best)
+        )
         return Retrieval(
             [] if reason is not None else selected,
             candidates,
@@ -310,7 +327,27 @@ class Consultor:
             best,
             reason,
             name_match,
+            unknown,
         )
+
+    def _unknown_names(self, names: Sequence[str], found: Sequence[Chunk]) -> list[str]:
+        """Nombres cualificados que no están en el índice aunque su dueño sí.
+
+        `pathlib.Path.teleport` es inexistente si `pathlib.Path` está indexado pero
+        ni hay tal símbolo ni su texto menciona `teleport`: responder con algo
+        parecido sería inventar. Si el dueño tampoco está, no se puede saber.
+        """
+        unknown: list[str] = []
+        for name in dict.fromkeys(n for n in names if "." in n):
+            if any(_is_named(chunk.qualname, name) for chunk in found):
+                continue
+            owner, _, last = name.rpartition(".")
+            owners = [
+                c.qualname for c in self._store.by_name([owner], 3, self._sources)
+            ]
+            if owners and not self._store.mentions(owners, last, name, self._sources):
+                unknown.append(name)
+        return unknown
 
     @staticmethod
     def _abstain_reason(name_match: bool, best: float | None) -> str | None:

@@ -77,6 +77,11 @@ la distancia vectorial.
 
 ### Abstención
 
+Si la pregunta nombra un símbolo cualificado que no existe (`pathlib.Path.teleport`)
+y su dueño sí está indexado (`pathlib.Path`), no se responde, sin umbral: contestar
+con algo parecido sería inventar una API. No cuenta como inexistente si el texto del
+dueño o algún fragmento lo menciona (`sys.argv`, constantes sin docstring propio).
+
 Si se define `[retrieval] max_distance`, la consulta no se responde cuando no hay
 coincidencia de nombre y el vecino más cercano supera ese umbral. Así se evita que el
 modelo «rellene» con fragmentos poco relacionados. Por defecto está desactivado

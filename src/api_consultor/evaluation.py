@@ -49,10 +49,13 @@ class Hits:
         distance: Distancia con la que se decide abstenerse: la del vecino más
             cercano (`math.inf` si no hay ninguno), o `None` si una coincidencia de
             nombre hace que se responda con cualquier umbral.
+        forced: Si se abstiene con cualquier umbral (p. ej. pregunta por un símbolo
+            que no existe).
     """
 
     chunks: Sequence[Chunk]
     distance: float | None = None
+    forced: bool = False
 
 
 def _matches(qualname: str, pattern: str) -> bool:
@@ -117,11 +120,13 @@ class CaseResult:
         case: El caso evaluado.
         ranked: Nombres cualificados recuperados, de mejor a peor.
         distance: Distancia de abstención (ver `Hits`); `None` si nunca se abstiene.
+        forced: Si se abstiene con cualquier umbral (ver `Hits`).
     """
 
     case: EvalCase
     ranked: tuple[str, ...]
     distance: float | None = None
+    forced: bool = False
 
     def abstains(self, threshold: float | None) -> bool:
         """Indica si la recuperación se abstendría con ese umbral (`max_distance`).
@@ -130,9 +135,10 @@ class CaseResult:
             threshold: Umbral de distancia; `None` desactiva la abstención.
 
         Returns:
-            `True` si no hay coincidencia de nombre y la distancia supera el umbral.
+            `True` si se abstiene siempre, o si no hay coincidencia de nombre y la
+            distancia supera el umbral.
         """
-        return (
+        return self.forced or (
             threshold is not None
             and self.distance is not None
             and self.distance > threshold
@@ -179,7 +185,8 @@ class Abstention:
         by_name: De esos, cuántos pasan por coincidencia de nombre (ningún umbral
             los detiene).
         answerable: Casos con respuesta.
-        lost: De ellos, cuántos se callarían por el umbral.
+        lost: De ellos, cuántos se callarían habiendo recuperado la fuente correcta
+            (callar cuando la recuperación falla no es perder una respuesta).
     """
 
     threshold: float | None
@@ -277,7 +284,7 @@ class EvalReport:
             len(answered),
             sum(r.distance is None for r in answered),
             len(positive),
-            sum(r.abstains(threshold) for r in positive),
+            sum(r.rank is not None and r.abstains(threshold) for r in positive),
         )
 
     def suggest_threshold(self) -> float | None:
@@ -295,7 +302,7 @@ class EvalReport:
             {
                 r.distance
                 for r in self.results
-                if r.distance is not None and math.isfinite(r.distance)
+                if not r.forced and r.distance is not None and math.isfinite(r.distance)
             }
         )
         has_both = {r.case.answerable for r in self.results} == {True, False}
@@ -365,7 +372,7 @@ def evaluate(
         found = retrieve(case.question, sorted_ks[-1])
         hits = found if isinstance(found, Hits) else Hits(found)
         ranked = tuple(chunk.qualname for chunk in hits.chunks)
-        result = CaseResult(case, ranked, hits.distance)
+        result = CaseResult(case, ranked, hits.distance, hits.forced)
         results.append(result)
         if on_result is not None:
             on_result(result)

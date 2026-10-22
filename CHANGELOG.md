@@ -23,9 +23,13 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Añadido
 
+- `api ask` no responde si la pregunta nombra un símbolo cualificado que no existe
+  (`pathlib.Path.teleport`, `json.compress`) y su dueño sí está indexado, aunque no
+  haya `max_distance`; antes respondía con el símbolo más parecido.
 - `api eval` mide la abstención: las preguntas con `expected = []` (sin respuesta en
   el índice) cuentan respuestas falsas y perdidas con el `max_distance` actual y se
-  sugiere el umbral que mejor separa ambos grupos. `evals/stdlib.toml` trae seis.
+  sugiere el umbral que mejor separa ambos grupos (callar una pregunta cuya fuente no
+  se recuperó no cuenta como respuesta perdida). `evals/stdlib.toml` trae seis.
 - Límites de tamaño en `api index-docs` (20 MiB por fichero, 512 MiB y 20 000
   ficheros por fuente) contra bombas zip y carpetas equivocadas.
 

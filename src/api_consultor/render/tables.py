@@ -222,12 +222,14 @@ def _show_abstention(
         header_style=f"bold {FG}",
         expand=True,
     )
-    detail.add_column("Distancia", justify="right", no_wrap=True, min_width=9)
+    detail.add_column("Distancia", justify="right", no_wrap=True, min_width=11)
     for name, ratio in (("Pregunta", 6), ("Primer resultado", 5)):
         detail.add_column(name, ratio=ratio, overflow="ellipsis", no_wrap=True)
     for result in shown:
         distance = (
-            Text("nombre", style="error")
+            Text("inexistente", style="success")
+            if result.forced
+            else Text("nombre", style="error")
             if result.distance is None
             else Text(
                 f"{result.distance:.3f}",

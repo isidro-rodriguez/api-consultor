@@ -310,3 +310,65 @@ def test_retrieval_hits_ignore_abstention_and_expose_its_distance() -> None:
     assert abstained.hits() == Hits([kept], 0.5)
     assert Retrieval([kept], candidates, name_match=True).hits() == Hits([kept])
     assert Retrieval([], []).hits() == Hits([], math.inf)
+
+
+@pytest.fixture
+def known(tmp_path: Path, stub_ollama: StubOllama) -> Generator[Consultor]:
+    chunks = [
+        Chunk("mod", "mod", "1", "Módulo. Variables: argv con los argumentos."),
+        Chunk("mod.Clase", "mod", "1", "Una clase."),
+        Chunk("mod.Clase.metodo", "mod", "1", "Un método."),
+        Chunk("mod.largo [2]", "mod", "1", "Segunda parte de largo."),
+        Chunk("guia.md#Uso", "guia", "1", "Ver también mod.oculto en la guía."),
+    ]
+    with Store(tmp_path / "k.db", EMBED_DIM) as store:
+        store.replace("mod", chunks[:4], fake_embed([c.content for c in chunks[:4]]))
+        store.replace("guia", chunks[4:], fake_embed([chunks[4].content]))
+        yield Consultor(store)
+
+
+@pytest.mark.parametrize(
+    "question",
+    ["¿Qué hace mod.Clase.teletransporta?", "¿mod.inventada existe?"],
+)
+def test_a_missing_symbol_of_an_indexed_owner_always_abstains(
+    known: Consultor, question: str
+) -> None:
+    # Sin `max_distance`: no hace falta umbral para no inventar una API.
+    retrieval = known.search(question)
+    assert retrieval.chunks == []
+    assert retrieval.unknown
+    assert retrieval.abstain_reason == f"{retrieval.unknown[0]} no aparece en el índice"
+    assert retrieval.hits().forced
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "¿Qué es mod.argv?",  # sin fragmento propio, pero su módulo lo menciona
+        "¿Qué es mod.oculto?",  # lo menciona la documentación con su nombre completo
+        "¿Qué hace Clase.metodo?",  # nombre parcial de un símbolo indexado
+        "¿Para qué sirve mod.largo?",  # solo existe troceado (`mod.largo [2]`)
+        "¿Qué hace otro.paquete?",  # dueño no indexado: decide el umbral
+    ],
+)
+def test_known_or_undecidable_names_are_not_unknown(
+    known: Consultor, question: str
+) -> None:
+    retrieval = known.search(question)
+    assert retrieval.unknown == []
+    assert retrieval.chunks
+
+
+def test_unknown_names_respect_the_source_filter(
+    tmp_path: Path, stub_ollama: StubOllama
+) -> None:
+    with Store(tmp_path / "s.db", EMBED_DIM) as store:
+        a = [Chunk("mod", "mod", "1", "Nada.")]
+        b = [Chunk("x.md#Y", "notas", "1", "Habla de mod.secreto.")]
+        store.replace("mod", a, fake_embed(["Nada."]))
+        store.replace("notas", b, fake_embed([b[0].content]))
+        assert Consultor(store).search("mod.secreto").unknown == []
+        assert Consultor(store, {"mod"}).search("mod.secreto").unknown == [
+            "mod.secreto"
+        ]
