@@ -1,6 +1,7 @@
 import platform
 import re
 import zipfile
+from collections.abc import Sequence
 from pathlib import Path
 
 import ollama
@@ -41,6 +42,26 @@ def test_help_lists_all_commands() -> None:
     plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
     for command in ("index", "index-docs", "ask", "sources", "--version"):
         assert command in plain
+
+
+@pytest.mark.parametrize("args", [["--help"], ["index", "--help"]])
+def test_help_respects_the_configured_width(
+    isolated_user_config: Path, args: list[str]
+) -> None:
+    isolated_user_config.parent.mkdir(parents=True)
+    isolated_user_config.write_text("[display]\nwidth = 50\n", encoding="utf-8")
+    result = runner.invoke(app, args, env={"COLUMNS": "200"})
+    assert result.exit_code == 0, result.output
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    assert max(len(line) for line in plain.splitlines()) <= 50
+
+
+def test_help_ignores_an_invalid_config(isolated_user_config: Path) -> None:
+    isolated_user_config.parent.mkdir(parents=True)
+    isolated_user_config.write_text("[nada]\n", encoding="utf-8")
+    result = runner.invoke(app, ["--help"])
+    assert result.exit_code == 0
+    assert "Uso:" in result.output
 
 
 def test_version_flag_shows_panel() -> None:
@@ -478,3 +499,64 @@ def test_index_rejects_invalid_package_names(stub_ollama: StubOllama) -> None:
     result = runner.invoke(app, ["index", ".relativo", "json"])
     assert result.exit_code == 0, result.output
     assert "no se pudo importar" in result.output
+
+
+@pytest.fixture
+def two_sources(docs: Path, stub_ollama: StubOllama) -> StubOllama:
+    other = docs.parent / "otras-notas"
+    other.mkdir()
+    (other / "shutil.md").write_text(
+        "# shutil.rmtree\n\nBorra un directorio y su contenido.\n", encoding="utf-8"
+    )
+    result = runner.invoke(app, ["index-docs"])
+    assert result.exit_code == 0, result.output
+    return stub_ollama
+
+
+def test_ask_source_limits_the_retrieval(two_sources: StubOllama) -> None:
+    result = runner.invoke(app, ["ask", "-s", "otras-notas", "¿os.listdir?"])
+    assert result.exit_code == 0, result.output
+    assert "shutil.md#shutil.rmtree" in result.output
+    assert "os.md#os.listdir" not in result.output
+
+
+def test_ask_source_is_repeatable(two_sources: StubOllama) -> None:
+    result = runner.invoke(
+        app, ["ask", "-s", "otras-notas", "--source", "mis-notas", "¿os.listdir?"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "os.md#os.listdir" in result.output
+
+
+def test_ask_unknown_source_fails_with_hint(two_sources: StubOllama) -> None:
+    result = runner.invoke(app, ["ask", "-s", "nada", "hola"])
+    assert result.exit_code == 1
+    assert "Fuente no indexada: nada" in result.output
+    assert two_sources.messages == []
+
+
+def test_ask_stdlib_alias_needs_an_indexed_stdlib(two_sources: StubOllama) -> None:
+    result = runner.invoke(app, ["ask", "-s", "stdlib", "hola"])
+    assert result.exit_code == 1
+    assert "Fuente no indexada: stdlib" in result.output
+
+
+def test_reindexing_only_embeds_new_or_changed_fragments(
+    docs: Path, stub_ollama: StubOllama, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sent: list[str] = []
+
+    def counting(texts: Sequence[str]) -> list[list[float]]:
+        sent.extend(texts)
+        return fake_embed(texts)
+
+    monkeypatch.setattr("api_consultor.cli.embed", counting)
+    assert runner.invoke(app, ["index-docs"]).exit_code == 0
+    assert len(sent) == 1
+    sent.clear()
+    assert runner.invoke(app, ["index-docs"]).exit_code == 0
+    assert sent == []  # nada cambió: todo sale de la caché
+    (docs / "os.md").write_text(NOTES + "\n# os.walk\n\nRecorre un árbol.\n", "utf-8")
+    assert runner.invoke(app, ["index-docs"]).exit_code == 0
+    assert len(sent) == 1
+    assert "os.walk" in sent[0]

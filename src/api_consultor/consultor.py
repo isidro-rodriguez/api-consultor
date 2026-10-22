@@ -1,7 +1,7 @@
 """Flujo RAG: recuperar fragmentos y preguntar al modelo."""
 
 import re
-from collections.abc import Iterator, Sequence
+from collections.abc import Collection, Iterator, Sequence
 from dataclasses import dataclass, field
 from html import escape
 
@@ -150,11 +150,23 @@ class Retrieval:
     abstain_reason: str | None = None
 
 
+_DOCS_TAG = re.compile(r"<(/?)(docs)\b", re.IGNORECASE)
+"""Etiquetas `<docs`/`</docs` dentro de un fragmento (cerrarían su bloque antes)."""
+
+
+def _neutralize(content: str) -> str:
+    """Escapa las etiquetas `docs` del contenido; el resto del texto queda intacto."""
+    return _DOCS_TAG.sub(r"&lt;\1\2", content)
+
+
 def format_context(chunks: list[Chunk]) -> str:
     """Da formato XML al contexto que se envía al modelo.
 
     Cada fragmento va en un bloque `<docs id="DOC-NN" ...>` con sus atributos
-    escapados, para que el modelo pueda citarlo por su identificador.
+    escapados, para que el modelo pueda citarlo por su identificador. Las etiquetas
+    `docs` que aparezcan en el contenido (p. ej. documentación sobre este mismo
+    formato) se escapan para que no cierren ni abran bloques; el código con `<` o
+    `>` se conserva tal cual.
 
     Args:
         chunks: Fragmentos elegidos, en el orden en que se numeran.
@@ -167,7 +179,7 @@ def format_context(chunks: list[Chunk]) -> str:
     return "\n".join(
         f'<docs id="{doc_id(i)}" source="{escape(c.qualname)}" '
         f'package="{escape(c.package)}" version="{escape(c.version)}">\n'
-        f"{c.content}\n</docs>"
+        f"{_neutralize(c.content)}\n</docs>"
         for i, c in enumerate(chunks, start=1)
     )
 
@@ -177,10 +189,12 @@ class Consultor:
 
     Args:
         store: Índice abierto en el que buscar.
+        sources: Fuentes a las que se limita la recuperación; `None` para todas.
     """
 
-    def __init__(self, store: Store) -> None:
+    def __init__(self, store: Store, sources: Collection[str] | None = None) -> None:
         self._store = store
+        self._sources = None if sources is None else frozenset(sources)
 
     def retrieve(self, question: str, k: int | None = None) -> list[Chunk]:
         """Devuelve los fragmentos más relevantes para una pregunta.
@@ -218,10 +232,11 @@ class Consultor:
         names = _IDENTIFIER.findall(question)
         terms = _terms(question)
         query = _lexical_query(question)
-        qualified = self._store.by_name(names, limit_per_name=3)
-        short = self._store.by_short_name(terms)
-        lexical = self._store.lexical(query, pool) if query is not None else []
-        scored = self._store.search_scored(embed([question])[0], pool)
+        only = self._sources
+        qualified = self._store.by_name(names, limit_per_name=3, sources=only)
+        short = self._store.by_short_name(terms, sources=only)
+        lexical = [] if query is None else self._store.lexical(query, pool, only)
+        scored = self._store.search_scored(embed([question])[0], pool, only)
         distances = {(c.package, c.qualname): d for c, d in scored}
         fused = _fuse_detailed(
             [

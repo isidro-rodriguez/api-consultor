@@ -40,10 +40,15 @@ declares terminada una tarea que no hayas ejecutado.
 | `userconfig.py` | `config.toml` del usuario (sobrescribe `Settings`, plantilla de enlaces) y `api config`.        |
 | `evaluation.py` | Recall@k, MRR y carga de casos de `api eval`.                                                   |
 | `llm.py`        | Capa fina sobre el cliente de Ollama (`embed`, `stream_chat`).                                  |
-| `render.py`     | Toda la salida de consola: tema Monokai, Markdown, tablas, versión.                             |
+| `render/`       | Toda la salida de consola (ver abajo).                                                          |
 | `config.py`     | `Settings` inmutable (modelos, rutas, `retrieval_k`, `retrieval_candidates`, ancho de consola). |
 
-Nada imprime fuera de `render.py`. `src/api_consultor/Modelfile` (empaquetado) define el modelo `api-consultor`; `models.py` lo localiza y `api setup` lo crea.
+Nada imprime fuera de `render/`: `theme` (paleta, consolas, ancho), `typer_help`
+(parches de API privada de Typer, por eso `typer<0.28`), `messages` (paneles, notas,
+entrada, versión), `answer` (streaming, fuentes, `--debug`) y `tables`. Las funciones
+leen `theme.console`/`theme.err_console` al ejecutarse: los tests las sustituyen ahí.
+
+`src/api_consultor/Modelfile` (empaquetado) define el modelo `api-consultor`; `models.py` lo localiza y `api setup` lo crea.
 
 ## Convenciones
 
@@ -60,8 +65,8 @@ Nada imprime fuera de `render.py`. `src/api_consultor/Modelfile` (empaquetado) d
   `uv add --dev` (desarrollo). `uv.lock` se versiona.
 - Commits convencionales (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`).
 - Versionado SemVer: toda mejora visible para el usuario añade una línea a
-  `## [Unreleased]` de `CHANGELOG.md`. Al publicar: `uv version --bump <nivel>`,
-  mover lo de Unreleased a la nueva versión y `git tag -a vX.Y.Z`.
+  `## [Sin publicar]` de `CHANGELOG.md`. Al publicar: `uv version --bump <nivel>`,
+  mover lo de «Sin publicar» a la nueva versión y `git tag -a vX.Y.Z`.
 
 ## Tests
 
@@ -81,7 +86,11 @@ Nada imprime fuera de `render.py`. `src/api_consultor/Modelfile` (empaquetado) d
   esquema debe migrar solo al abrir (sin reindexar) y llevar un test con un índice
   «antiguo» simulado (ver `test_a_legacy_index_gets_sources_inferred_from_its_chunks`).
 - Las rutas de `chunks.path` son relativas a `sources.root`; `sources.python` guarda el
-  intérprete de un paquete indexado con `--python`. `probe.py`, `indexer.py`, `docs.py`,
+  intérprete de un paquete indexado con `--python` y `sources.module` su nombre
+  importable (la fuente puede llamarse `paquete@entorno`, ver `Store.source_name`).
+  Usa `SourceInfo.import_name` para versiones y reindexado, nunca el nombre de fuente.
+- `chunks.hash` (SHA-256 del texto) es la caché de embeddings: `cached_embeddings`
+  devuelve los vectores ya calculados y solo se embebe lo que falta. `probe.py`, `indexer.py`, `docs.py`,
   `versions.py`, `external.py` y `records.py` deben seguir siendo stdlib-only y sin
   importar `store`/`cli`, porque la sonda los carga en el entorno ajeno.
 - Nunca insertes ni consultes vectores sin validar su dimensión (`Store.check_vector`).

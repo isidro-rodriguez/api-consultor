@@ -82,7 +82,7 @@ def _foreign_versions(
     wanted: dict[str, list[str]] = {}
     for source in sources:
         if source.kind != "docs" and not is_own(source.python):
-            wanted.setdefault(source.python, []).append(source.package)
+            wanted.setdefault(source.python, []).append(source.import_name)
     found: dict[str, dict[str, str | None]] = {}
     for python, names in wanted.items():
         if not Path(python).is_file():
@@ -118,12 +118,12 @@ def check_versions(sources: Sequence[SourceInfo]) -> list[VersionStatus]:
             gone = bool(source.root) and not Path(source.root).is_dir()
             statuses.append(VersionStatus(source, None, "gone" if gone else "docs"))
         elif is_own(source.python):
-            installed = installed_version(source.package, distributions)
+            installed = installed_version(source.import_name, distributions)
             statuses.append(VersionStatus(source, installed, _state(source, installed)))
         elif source.python not in foreign:
             statuses.append(VersionStatus(source, None, "gone"))
         else:
-            installed = foreign[source.python].get(source.package)
+            installed = foreign[source.python].get(source.import_name)
             statuses.append(VersionStatus(source, installed, _state(source, installed)))
     return statuses
 

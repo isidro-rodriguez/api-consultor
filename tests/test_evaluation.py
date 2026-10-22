@@ -170,12 +170,12 @@ def render_report(verbose: bool = False) -> str:
     report = evaluate(lambda _q, _k: [chunk("a"), chunk("b")], cases, ks=(1, 5))
     buffer = StringIO()
     out = Console(file=buffer, width=120, theme=render.THEME, color_system=None)
-    original = render.console
-    render.console = out
+    original = render.theme.console
+    render.theme.console = out
     try:
         render.show_evaluation(report, verbose=verbose)
     finally:
-        render.console = original
+        render.theme.console = original
     return buffer.getvalue()
 
 
@@ -198,12 +198,12 @@ def test_show_evaluation_verbose_lists_every_case() -> None:
 def test_show_evaluation_celebrates_when_nothing_fails() -> None:
     report = evaluate(lambda _q, _k: [chunk("a")], [EvalCase("q", ("a",))], ks=(1, 5))
     buffer = StringIO()
-    original = render.console
-    render.console = Console(file=buffer, width=100, theme=render.THEME)
+    original = render.theme.console
+    render.theme.console = Console(file=buffer, width=100, theme=render.THEME)
     try:
         render.show_evaluation(report)
     finally:
-        render.console = original
+        render.theme.console = original
     assert "Todos los casos aciertan en el top-5" in buffer.getvalue()
 
 
@@ -259,21 +259,21 @@ def test_failures_table_keeps_every_column_readable() -> None:
     cases = [EvalCase(long_question, ("fuente.esperada.larga|otra/ruta.txt#*",))]
     report = evaluate(lambda _q, _k: [chunk("resultado.distinto")], cases, ks=(1, 5))
     buffer = StringIO()
-    original = render.console
-    render.console = Console(
+    original = render.theme.console
+    render.theme.console = Console(
         file=buffer, width=90, theme=render.THEME, color_system=None
     )
     try:
         render.show_evaluation(report)
     finally:
-        render.console = original
+        render.theme.console = original
     text = buffer.getvalue()
     lines = text.splitlines()
     header = next(line for line in lines if "Pregunta" in line)
     assert "Rango" in header
     assert "Esperado" in header
     assert "Primer resultado" in header
-    assert max(len(line) for line in lines) <= render.SETTINGS.console_width
+    assert max(len(line) for line in lines) <= render.theme.SETTINGS.console_width
     assert "…" in text  # el texto largo se recorta con elipsis, no se colapsa
 
 

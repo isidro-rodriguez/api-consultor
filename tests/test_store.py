@@ -1,4 +1,5 @@
 import sqlite3
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,8 @@ from api_consultor.store import (
     IndexIntegrityError,
     SourceInfo,
     Store,
+    content_hash,
+    environment_label,
 )
 
 DIM = 4
@@ -19,8 +22,9 @@ def chunk(qualname: str, package: str = "pkg", version: str = "1.0") -> Chunk:
 
 
 @pytest.fixture
-def store(tmp_path: Path) -> Store:
-    return Store(tmp_path / "t.db", DIM)
+def store(tmp_path: Path) -> Generator[Store]:
+    with Store(tmp_path / "t.db", DIM) as opened:
+        yield opened
 
 
 def test_replace_is_idempotent(store: Store) -> None:
@@ -320,3 +324,85 @@ def test_opening_an_index_without_locations_migrates_it(tmp_path: Path) -> None:
     legacy.close()
     with Store(path, DIM) as migrated:
         assert migrated.by_name(["a"]) == [Chunk("a", "pkg", "1", "x", "", 0)]
+
+
+def test_searches_can_be_limited_to_some_sources(store: Store) -> None:
+    for package, vector in (("a", [1.0, 0, 0, 0]), ("b", [0.9, 0.1, 0, 0])):
+        store.replace(
+            package,
+            [Chunk(f"{package}.mod.rglob", package, "1", "rglob recorre carpetas")],
+            [vector],
+        )
+    only_b = {"b"}
+    assert [c.package for c in store.by_name(["mod.rglob"], 5, only_b)] == ["b"]
+    assert [c.package for c in store.by_short_name(["rglob"], sources=only_b)] == ["b"]
+    assert [c.package for c in store.lexical("rglob", 5, only_b)] == ["b"]
+    scored = store.search_scored([1.0, 0, 0, 0], 5, only_b)
+    assert [c.package for c, _ in scored] == ["b"]
+    unfiltered = dict((c.package, d) for c, d in store.search_scored([1.0, 0, 0, 0], 5))
+    assert scored[0][1] == pytest.approx(unfiltered["b"])
+    assert store.search([1.0, 0, 0, 0], 5, set()) == []
+
+
+def test_cached_embeddings_are_found_by_content(store: Store) -> None:
+    store.replace("pkg", [Chunk("a", "pkg", "1", "texto a")], [[0.5, 0.25, 0, 1.0]])
+    found = store.cached_embeddings(["texto a", "texto nuevo"])
+    assert found == {content_hash("texto a"): [0.5, 0.25, 0.0, 1.0]}
+    assert store.cached_embeddings([]) == {}
+
+
+def test_source_name_keeps_one_source_per_environment(store: Store) -> None:
+    assert store.source_name("zensical") == "zensical"
+    store.replace("zensical", [chunk("zensical.a", "zensical")], [[1.0, 0, 0, 0]])
+    assert store.source_name("zensical") == "zensical"
+    venv = "/home/u/reCocina/.venv/bin/python"
+    assert store.source_name("zensical", venv) == "zensical@reCocina"
+    store.replace(
+        "zensical@reCocina",
+        [chunk("zensical.a", "zensical@reCocina")],
+        [[1.0, 0, 0, 0]],
+        python=venv,
+        module="zensical",
+    )
+    assert store.source_name("zensical", venv) == "zensical@reCocina"
+    other = "/otro/reCocina/.venv/bin/python"
+    assert store.source_name("zensical", other) == "zensical@reCocina-2"
+    sources = {s.package: s.import_name for s in store.sources()}
+    assert sources == {"zensical": "zensical", "zensical@reCocina": "zensical"}
+
+
+def test_a_package_does_not_overwrite_documentation_with_its_name(store: Store) -> None:
+    store.replace(
+        "requests", [chunk("guia.md#Uso", "requests")], [[1.0, 0, 0, 0]], "docs"
+    )
+    assert store.source_name("requests") == "requests@herramienta"
+    [docs] = store.sources()
+    assert docs.module == ""
+
+
+def test_environment_labels() -> None:
+    assert environment_label("") == "herramienta"
+    assert environment_label("/p/reCocina/.venv/bin/python") == "reCocina"
+    assert environment_label(r"C:/p/Poker/venv/Scripts/python.exe") == "Poker"
+    assert environment_label("/opt/py312/bin/python") == "py312"
+
+
+def test_opening_a_v4_index_adds_hashes_and_modules(tmp_path: Path) -> None:
+    path = tmp_path / "v4.db"
+    with Store(path, DIM) as first:
+        first.replace("pkg", [chunk("pkg.a")], [[1.0, 0, 0, 0]])
+        first.replace("notas", [chunk("n.md#A", "notas")], [[0, 1.0, 0, 0]], "docs")
+    legacy = sqlite3.connect(path)
+    legacy.execute("DROP INDEX idx_chunks_hash")
+    legacy.execute("ALTER TABLE chunks DROP COLUMN hash")
+    legacy.execute("ALTER TABLE sources DROP COLUMN module")
+    legacy.execute("UPDATE meta SET value = '4' WHERE key = 'format_version'")
+    legacy.commit()
+    legacy.close()
+    with Store(path, DIM) as migrated:
+        assert migrated.meta()["format_version"] == str(FORMAT_VERSION)
+        assert content_hash("contenido de pkg.a") in migrated.cached_embeddings(
+            ["contenido de pkg.a"]
+        )
+        modules = {s.package: s.module for s in migrated.sources()}
+    assert modules == {"pkg": "pkg", "notas": ""}

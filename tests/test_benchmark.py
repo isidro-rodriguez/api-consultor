@@ -6,6 +6,7 @@ recuperación —búsqueda exacta, mezcla y deduplicación—, no la calidad sem
 no regresión: súbelos cuando una mejora los supere con holgura.
 """
 
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
@@ -96,13 +97,13 @@ CASES = Path(__file__).parent / "data" / "geolib_cases.toml"
 @pytest.fixture
 def corpus(
     make_package: PackageFactory, tmp_path: Path, stub_ollama: StubOllama
-) -> Consultor:
+) -> Generator[Consultor]:
     chunks = extract_chunks(make_package("geolib", GEOLIB))
     docs = extract_doc_chunks("guia-1.0", [("guia.md", GUIDE)])
-    store = Store(tmp_path / "bench.db", EMBED_DIM)
-    store.replace("geolib", chunks, fake_embed([c.content for c in chunks]))
-    store.replace("guia-1.0", docs, fake_embed([c.content for c in docs]))
-    return Consultor(store)
+    with Store(tmp_path / "bench.db", EMBED_DIM) as store:
+        store.replace("geolib", chunks, fake_embed([c.content for c in chunks]))
+        store.replace("guia-1.0", docs, fake_embed([c.content for c in docs]))
+        yield Consultor(store)
 
 
 @pytest.fixture

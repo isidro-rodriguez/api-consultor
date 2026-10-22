@@ -1,8 +1,10 @@
 """Almacén SQLite: vectores (sqlite-vec), palabras (FTS5), nombres y metadatos."""
 
+import hashlib
 import re
 import sqlite3
-from collections.abc import Iterable, Sequence
+from array import array
+from collections.abc import Collection, Iterable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
@@ -12,12 +14,50 @@ import sqlite_vec
 
 from .records import Chunk, SourceInfo
 
-FORMAT_VERSION = 4
+FORMAT_VERSION = 5
 """Formato del índice.
 
 1 sin metadatos, 2 con `meta`/`sources`, 3 con `path`/`line`, 4 con rutas relativas
-a la raíz de la fuente y `root`/`python` en `sources`.
+a la raíz de la fuente y `root`/`python` en `sources`, 5 con `chunks.hash` (caché de
+embeddings) y `sources.module` (paquete importable, distinto del nombre de la fuente).
 """
+
+_HASH_BATCH = 500
+"""Hashes por consulta al buscar embeddings ya calculados (límite de parámetros)."""
+
+
+def content_hash(content: str) -> str:
+    """Identifica el texto de un fragmento: igual texto, mismo embedding.
+
+    Args:
+        content: Texto que se vectoriza.
+
+    Returns:
+        SHA-256 en hexadecimal.
+    """
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def environment_label(python: str) -> str:
+    """Etiqueta corta de un entorno para distinguir fuentes con el mismo paquete.
+
+    Es la carpeta del proyecto que contiene el venv (`reCocina` para
+    `reCocina/.venv/bin/python`), o la del propio venv si no tiene un nombre
+    genérico; `herramienta` para el entorno de la aplicación.
+
+    Args:
+        python: Intérprete del entorno; vacío para el de la herramienta.
+
+    Returns:
+        La etiqueta.
+    """
+    if not python:
+        return "herramienta"
+    path = Path(python)
+    venv = path.parent.parent if path.parent.name in {"bin", "Scripts"} else path.parent
+    if venv.name.lstrip(".") in {"venv", "env"} and venv.parent.name:
+        return venv.parent.name
+    return venv.name or "entorno"
 
 
 class IndexIntegrityError(Exception):
@@ -62,6 +102,25 @@ def _guess_root(name: str, kind: str, rows: list[tuple[int, str, str]]) -> str |
 
 
 _COLUMNS = "qualname, package, version, content, path, line"
+_PREFIXED = ", ".join("c." + column.strip() for column in _COLUMNS.split(","))
+
+
+def _only(
+    sources: Collection[str] | None, column: str = "package"
+) -> tuple[str, list[str]]:
+    """Condición SQL (con su `AND`) que limita la búsqueda a unas fuentes.
+
+    Args:
+        sources: Fuentes permitidas; `None` para no limitar.
+        column: Columna con el nombre de la fuente.
+
+    Returns:
+        El fragmento SQL (vacío si no hay límite) y sus parámetros.
+    """
+    if sources is None:
+        return "", []
+    names = sorted(sources)
+    return f" AND {column} IN ({', '.join('?' * len(names))})", names
 
 
 class Store:
@@ -112,7 +171,8 @@ class Store:
                 version TEXT NOT NULL,
                 content TEXT NOT NULL,
                 path TEXT NOT NULL DEFAULT '',
-                line INTEGER NOT NULL DEFAULT 0
+                line INTEGER NOT NULL DEFAULT 0,
+                hash TEXT NOT NULL DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS idx_chunks_package ON chunks(package);
             CREATE INDEX IF NOT EXISTS idx_chunks_qualname ON chunks(qualname);
@@ -131,7 +191,8 @@ class Store:
                 version TEXT NOT NULL,
                 indexed_at TEXT NOT NULL,
                 root TEXT NOT NULL DEFAULT '',
-                python TEXT NOT NULL DEFAULT ''
+                python TEXT NOT NULL DEFAULT '',
+                module TEXT NOT NULL DEFAULT ''
             );
         """)
         with self._db:
@@ -157,7 +218,36 @@ class Store:
                     "THEN 'docs' ELSE 'package' END, MIN(version), '' "
                     "FROM chunks GROUP BY package"
                 )
+            self._migrate_hashes_and_modules()
+        self._db.execute("CREATE INDEX IF NOT EXISTS idx_chunks_hash ON chunks(hash)")
         self._check_and_record_meta(dim, model)
+
+    def _migrate_hashes_and_modules(self) -> None:
+        """Migra al formato 5: hash por fragmento y paquete importable por fuente.
+
+        Los hashes se calculan del texto ya guardado, así que los embeddings existentes
+        sirven de caché desde el primer reindexado.
+        """
+        columns = {row[1] for row in self._db.execute("PRAGMA table_info(chunks)")}
+        if "hash" not in columns:
+            self._db.execute(
+                "ALTER TABLE chunks ADD COLUMN hash TEXT NOT NULL DEFAULT ''"
+            )
+        self._db.executemany(
+            "UPDATE chunks SET hash = ? WHERE id = ?",
+            [
+                (content_hash(content), row_id)
+                for row_id, content in self._db.execute(
+                    "SELECT id, content FROM chunks WHERE hash = ''"
+                ).fetchall()
+            ],
+        )
+        columns = {row[1] for row in self._db.execute("PRAGMA table_info(sources)")}
+        if "module" not in columns:
+            self._db.execute(
+                "ALTER TABLE sources ADD COLUMN module TEXT NOT NULL DEFAULT ''"
+            )
+            self._db.execute("UPDATE sources SET module = name WHERE kind != 'docs'")
 
     def _migrate_roots(self) -> None:
         """Pasa un índice anterior al formato 4: raíz por fuente y rutas relativas."""
@@ -264,6 +354,65 @@ class Store:
         """Cierra la conexión con la base de datos."""
         self._db.close()
 
+    def source_name(self, module: str, python: str = "") -> str:
+        """Nombre de fuente para un paquete indexado desde un entorno.
+
+        Si ese paquete ya está indexado desde ese entorno, devuelve su nombre (el
+        reindexado lo sustituye). Si no, usa el nombre del paquete y, cuando ya lo
+        ocupa el mismo paquete de otro entorno, le añade la etiqueta del entorno
+        (`zensical@reCocina`) para que no se pisen.
+
+        Args:
+            module: Nombre importable del paquete.
+            python: Intérprete del entorno; vacío para el de la herramienta.
+
+        Returns:
+            El nombre de la fuente.
+        """
+        rows = self._db.execute(
+            "SELECT name, python FROM sources "
+            "WHERE kind != 'docs' AND (module = ? OR (module = '' AND name = ?))",
+            (module, module),
+        ).fetchall()
+        for name, indexed_from in rows:
+            if indexed_from == python:
+                return str(name)
+        taken = {row[0] for row in self._db.execute("SELECT name FROM sources")}
+        if module not in taken:
+            return module
+        base = f"{module}@{environment_label(python)}"
+        candidate, suffix = base, 2
+        while candidate in taken:
+            candidate, suffix = f"{base}-{suffix}", suffix + 1
+        return candidate
+
+    def cached_embeddings(self, contents: Iterable[str]) -> dict[str, list[float]]:
+        """Busca embeddings ya calculados para unos textos.
+
+        Un fragmento con el mismo texto (de cualquier fuente) tiene el mismo
+        embedding: el índice usa un solo modelo, validado al abrirlo.
+
+        Args:
+            contents: Textos de los fragmentos.
+
+        Returns:
+            Embedding por hash de contenido (ver `content_hash`), solo de los que ya
+            están en el índice.
+        """
+        hashes = list(dict.fromkeys(content_hash(text) for text in contents))
+        found: dict[str, list[float]] = {}
+        for start in range(0, len(hashes), _HASH_BATCH):
+            batch = hashes[start : start + _HASH_BATCH]
+            rows = self._db.execute(
+                "SELECT c.hash, v.embedding FROM chunks AS c "
+                "JOIN vec_chunks AS v ON v.rowid = c.id "
+                f"WHERE c.hash IN ({', '.join('?' * len(batch))})",
+                batch,
+            )
+            for digest, blob in rows:
+                found.setdefault(digest, array("f", blob).tolist())
+        return found
+
     def replace(
         self,
         package: str,
@@ -273,6 +422,7 @@ class Store:
         *,
         root: str = "",
         python: str = "",
+        module: str = "",
     ) -> None:
         """Sustituye todo lo indexado de una fuente (reindexado idempotente).
 
@@ -286,6 +436,8 @@ class Store:
             kind: `"package"`, `"stdlib"` o `"docs"`.
             root: Carpeta a la que son relativas las rutas de los fragmentos.
             python: Intérprete del entorno indexado; vacío si es el de la herramienta.
+            module: Paquete importable si difiere del nombre de la fuente; por
+                defecto, el nombre (salvo para documentación).
 
         Raises:
             IndexIntegrityError: Si algún embedding no tiene la dimensión del índice.
@@ -305,7 +457,8 @@ class Store:
             self._db.execute("DELETE FROM chunks WHERE package = ?", (package,))
             for chunk, embedding in zip(chunks, embeddings, strict=True):
                 cur = self._db.execute(
-                    f"INSERT INTO chunks({_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?)",
+                    f"INSERT INTO chunks({_COLUMNS}, hash) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (
                         chunk.qualname,
                         chunk.package,
@@ -313,6 +466,7 @@ class Store:
                         chunk.content,
                         chunk.path,
                         chunk.line,
+                        content_hash(chunk.content),
                     ),
                 )
                 self._db.execute(
@@ -324,11 +478,20 @@ class Store:
                     (cur.lastrowid, chunk.qualname, chunk.content),
                 )
             if chunks:
+                importable = module or ("" if kind == "docs" else package)
                 self._db.execute(
                     "INSERT OR REPLACE INTO sources"
-                    "(name, kind, version, indexed_at, root, python) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
-                    (package, kind, chunks[0].version, _now(), root, python),
+                    "(name, kind, version, indexed_at, root, python, module) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        package,
+                        kind,
+                        chunks[0].version,
+                        _now(),
+                        root,
+                        python,
+                        importable,
+                    ),
                 )
             else:
                 self._db.execute("DELETE FROM sources WHERE name = ?", (package,))
@@ -337,7 +500,7 @@ class Store:
         """Lista las fuentes indexadas, por nombre, con su número de fragmentos."""
         rows = self._db.execute(
             "SELECT s.name, s.version, COUNT(c.id), s.kind, s.indexed_at, "
-            "s.root, s.python "
+            "s.root, s.python, s.module "
             "FROM sources AS s LEFT JOIN chunks AS c ON c.package = s.name "
             "GROUP BY s.name ORDER BY s.name"
         )
@@ -394,27 +557,39 @@ class Store:
         """Devuelve el nombre cualificado de todos los fragmentos del índice."""
         return [row[0] for row in self._db.execute("SELECT qualname FROM chunks")]
 
-    def by_name(self, names: Iterable[str], limit_per_name: int = 2) -> list[Chunk]:
+    def by_name(
+        self,
+        names: Iterable[str],
+        limit_per_name: int = 2,
+        sources: Collection[str] | None = None,
+    ) -> list[Chunk]:
         """Busca por nombre cualificado exacto o por sufijo tras un punto.
 
         Args:
             names: Nombres a buscar, p. ej. `pathlib.Path.rglob` o `Path.rglob`.
             limit_per_name: Máximo de resultados por nombre.
+            sources: Limita la búsqueda a estas fuentes; `None` para todas.
 
         Returns:
             Los fragmentos encontrados, agrupados por nombre.
         """
+        where, params = _only(sources)
         found: list[Chunk] = []
         for name in names:
             rows = self._db.execute(
                 f"SELECT {_COLUMNS} FROM chunks "
-                "WHERE qualname = ? OR qualname GLOB ? LIMIT ?",
-                (name, f"*.{name}", limit_per_name),
+                f"WHERE (qualname = ? OR qualname GLOB ?){where} LIMIT ?",
+                (name, f"*.{name}", *params, limit_per_name),
             )
             found.extend(Chunk(*row) for row in rows)
         return found
 
-    def by_short_name(self, names: Iterable[str], max_matches: int = 5) -> list[Chunk]:
+    def by_short_name(
+        self,
+        names: Iterable[str],
+        max_matches: int = 5,
+        sources: Collection[str] | None = None,
+    ) -> list[Chunk]:
         """Busca símbolos por su último componente, sin distinguir mayúsculas.
 
         Un nombre que coincide con más de `max_matches` símbolos es demasiado genérico
@@ -423,52 +598,65 @@ class Store:
         Args:
             names: Nombres cortos, p. ej. `rglob`.
             max_matches: Máximo de coincidencias para que un nombre cuente.
+            sources: Limita la búsqueda a estas fuentes; `None` para todas.
 
         Returns:
             Los fragmentos de los nombres suficientemente específicos.
         """
+        where, params = _only(sources)
         found: list[Chunk] = []
         for name in dict.fromkeys(n.lower() for n in names):
             rows = self._db.execute(
-                f"SELECT {_COLUMNS} FROM chunks WHERE lower(qualname) GLOB ? LIMIT ?",
-                (f"*.{name}", max_matches + 1),
+                f"SELECT {_COLUMNS} FROM chunks "
+                f"WHERE lower(qualname) GLOB ?{where} LIMIT ?",
+                (f"*.{name}", *params, max_matches + 1),
             ).fetchall()
             if 0 < len(rows) <= max_matches:
                 found.extend(Chunk(*row) for row in rows)
         return found
 
-    def lexical(self, query: str, limit: int) -> list[Chunk]:
+    def lexical(
+        self, query: str, limit: int, sources: Collection[str] | None = None
+    ) -> list[Chunk]:
         """Busca por palabras (FTS5, ranking BM25) con más peso en el nombre.
 
         Args:
             query: Consulta en la sintaxis de FTS5.
             limit: Máximo de resultados.
+            sources: Limita la búsqueda a estas fuentes; `None` para todas.
 
         Returns:
             Fragmentos de mejor a peor; vacío si la consulta no es válida.
         """
+        where, params = _only(sources, "c.package")
         try:
             rows = self._db.execute(
                 f"""
-                SELECT {", ".join("c." + col.strip() for col in _COLUMNS.split(","))}
+                SELECT {_PREFIXED}
                 FROM chunks_fts
                 JOIN chunks AS c ON c.id = chunks_fts.rowid
-                WHERE chunks_fts MATCH ?
+                WHERE chunks_fts MATCH ?{where}
                 ORDER BY bm25(chunks_fts, 5.0, 1.0)
                 LIMIT ?
                 """,
-                (query, limit),
+                (query, *params, limit),
             ).fetchall()
         except sqlite3.OperationalError:
             return []
         return [Chunk(*row) for row in rows]
 
-    def search(self, embedding: Sequence[float], k: int) -> list[Chunk]:
+    def search(
+        self,
+        embedding: Sequence[float],
+        k: int,
+        sources: Collection[str] | None = None,
+    ) -> list[Chunk]:
         """Busca los vecinos más cercanos a un embedding.
 
         Args:
             embedding: Vector de la consulta.
             k: Cuántos vecinos devolver.
+            sources: Limita la búsqueda a estas fuentes; `None` para todas.
 
         Returns:
             Los `k` fragmentos más cercanos, del más parecido al menos.
@@ -476,16 +664,25 @@ class Store:
         Raises:
             IndexIntegrityError: Si el vector no tiene la dimensión del índice.
         """
-        return [chunk for chunk, _distance in self.search_scored(embedding, k)]
+        return [chunk for chunk, _ in self.search_scored(embedding, k, sources)]
 
     def search_scored(
-        self, embedding: Sequence[float], k: int
+        self,
+        embedding: Sequence[float],
+        k: int,
+        sources: Collection[str] | None = None,
     ) -> list[tuple[Chunk, float]]:
         """Busca los vecinos más cercanos junto con su distancia.
+
+        Sin límite de fuentes usa el índice KNN de sqlite-vec. Con límite, calcula la
+        misma distancia (L2) solo sobre los fragmentos de esas fuentes: el KNN no
+        admite filtros y pedir más vecinos para filtrarlos después podría dejar fuera
+        una fuente pequeña.
 
         Args:
             embedding: Vector de la consulta.
             k: Cuántos vecinos devolver.
+            sources: Limita la búsqueda a estas fuentes; `None` para todas.
 
         Returns:
             Pares (fragmento, distancia), de menor a mayor distancia.
@@ -494,19 +691,33 @@ class Store:
             IndexIntegrityError: Si el vector no tiene la dimensión del índice.
         """
         self.check_vector(embedding)
-        rows = self._db.execute(
-            f"""
-            SELECT {", ".join("c." + col.strip() for col in _COLUMNS.split(","))},
-                   v.distance
-            FROM (
-                SELECT rowid, distance FROM vec_chunks
-                WHERE embedding MATCH ? AND k = ?
-            ) AS v
-            JOIN chunks AS c ON c.id = v.rowid
-            ORDER BY v.distance
-            """,
-            (sqlite_vec.serialize_float32(list(embedding)), k),
-        )
+        vector = sqlite_vec.serialize_float32(list(embedding))
+        if sources is None:
+            rows = self._db.execute(
+                f"""
+                SELECT {_PREFIXED}, v.distance
+                FROM (
+                    SELECT rowid, distance FROM vec_chunks
+                    WHERE embedding MATCH ? AND k = ?
+                ) AS v
+                JOIN chunks AS c ON c.id = v.rowid
+                ORDER BY v.distance
+                """,
+                (vector, k),
+            )
+        else:
+            where, params = _only(sources, "c.package")
+            rows = self._db.execute(
+                f"""
+                SELECT {_PREFIXED}, vec_distance_l2(v.embedding, ?) AS distance
+                FROM chunks AS c
+                JOIN vec_chunks AS v ON v.rowid = c.id
+                WHERE 1{where}
+                ORDER BY distance
+                LIMIT ?
+                """,
+                (vector, *params, k),
+            )
         return [(Chunk(*row[:6]), float(row[6])) for row in rows]
 
 
