@@ -368,7 +368,9 @@ def test_missing_package_uses_the_active_venv(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("VIRTUAL_ENV", str(venv_dir))
     result = runner.invoke(app, ["index", "solo_en_venv"])
-    assert f"-p {venv_dir}`" in _flat(result.output)
+    # Rich parte las rutas largas en varias líneas: se compara sin espacios.
+    compact = "".join(_flat(result.output).split())
+    assert f"-p{venv_dir}`" in compact
 
 
 def test_missing_everywhere_keeps_the_generic_hint(
