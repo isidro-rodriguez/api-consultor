@@ -406,3 +406,20 @@ def test_opening_a_v4_index_adds_hashes_and_modules(tmp_path: Path) -> None:
         )
         modules = {s.package: s.module for s in migrated.sources()}
     assert modules == {"pkg": "pkg", "notas": ""}
+
+
+def test_the_index_can_be_read_while_another_process_writes(tmp_path: Path) -> None:
+    path = tmp_path / "wal.db"
+    with Store(path, DIM) as store:
+        store.replace("pkg", [chunk("pkg.a")], [[1.0, 0, 0, 0]])
+    writer = sqlite3.connect(path)
+    try:
+        assert writer.execute("PRAGMA journal_mode").fetchone() == ("wal",)
+        writer.execute("BEGIN IMMEDIATE")  # como un `api index` a medio escribir
+        writer.execute("UPDATE sources SET version = '2.0'")
+        with Store(path, DIM) as reader:  # abrir y consultar no espera al escritor
+            assert reader.sources() == [SourceInfo("pkg", "1.0", 1)]
+            assert reader.search([1.0, 0, 0, 0], 1)
+        writer.rollback()
+    finally:
+        writer.close()

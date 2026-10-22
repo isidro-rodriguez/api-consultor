@@ -16,6 +16,10 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 - `api index-docs` con una carpeta `foo/` y un `foo.zip` (o una carpeta `docs/` y
   ficheros sueltos) sustituía una fuente por otra en silencio; ahora da un error.
 - Un `.zip` dañado de `api index-docs` da un error legible en vez de una traza.
+- `api ask` o `api sources` durante un `api index` en marcha podían fallar con
+  «database is locked»: abrir el índice ya no escribe si no hay nada que cambiar, el
+  índice usa modo WAL (lectores y escritor no se bloquean) y la espera máxima por un
+  cerrojo sube a 30 s.
 
 ### Añadido
 

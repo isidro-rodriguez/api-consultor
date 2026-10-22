@@ -60,6 +60,10 @@ def environment_label(python: str) -> str:
     return venv.name or "entorno"
 
 
+BUSY_TIMEOUT = 30.0
+"""Segundos que se espera a que otro proceso suelte el índice antes de fallar."""
+
+
 class IndexIntegrityError(Exception):
     """El índice no es compatible con la configuración actual.
 
@@ -145,7 +149,9 @@ class Store:
     def __init__(self, path: Path, dim: int, model: str | None = None) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.dim = dim
-        self._db = sqlite3.connect(path)
+        # Si otro proceso está escribiendo (p. ej. un `api index` en paralelo), espera
+        # en vez de fallar con «database is locked».
+        self._db = sqlite3.connect(path, timeout=BUSY_TIMEOUT)
         try:
             self._open(dim, model)
         except BaseException:
@@ -153,6 +159,9 @@ class Store:
             raise
 
     def _open(self, dim: int, model: str | None) -> None:
+        # WAL: se puede consultar mientras otro proceso indexa (lectores y escritor
+        # no se bloquean). Persiste en el fichero; sin efecto en `:memory:`.
+        self._db.execute("PRAGMA journal_mode = WAL")
         self._db.enable_load_extension(True)
         sqlite_vec.load(self._db)
         self._db.enable_load_extension(False)
@@ -313,11 +322,13 @@ class Store:
             updates["embed_model"] = model  # un índice anterior adopta el modelo actual
         if "created_at" not in stored:
             updates["created_at"] = _now()
-        with self._db:
-            self._db.executemany(
-                "INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)",
-                updates.items(),
-            )
+        # Solo se escribe si algo cambia: abrir para consultar no debe pedir el
+        # cerrojo de escritura (chocaría con un `api index` en marcha).
+        if changed := [(k, v) for k, v in updates.items() if stored.get(k) != v]:
+            with self._db:
+                self._db.executemany(
+                    "INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)", changed
+                )
 
     def meta(self) -> dict[str, str]:
         """Devuelve los metadatos: formato, modelo y dimensión, y fecha de creación."""

@@ -100,6 +100,8 @@ ninguna cita.
   `api sources --relocate` la recoloca.
 - Al preguntar se compara la versión indexada de cada paquete con la instalada en su
   entorno, y se avisa de las obsoletas.
+- La base usa modo WAL: se puede consultar mientras otro proceso indexa. Dos
+  indexados a la vez se turnan (cada fuente se escribe en una sola transacción).
 
 ## Limitaciones conocidas
 
