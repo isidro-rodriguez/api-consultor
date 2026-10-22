@@ -92,7 +92,9 @@ all = "error"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers --strict-config --cov=api_consultor --cov-report=term-missing:skip-covered"
-filterwarnings = ["error::ResourceWarning"]                                                                 # índices y ficheros sin cerrar
+# Índices y ficheros sin cerrar; leer o escribir sin `encoding` (en Windows no es UTF-8):
+# EncodingWarning solo se emite con PYTHONWARNDEFAULTENCODING=1 (lo activa el CI).
+filterwarnings = ["error::ResourceWarning", "error::EncodingWarning"]
 
 [tool.coverage.run]
 branch = true

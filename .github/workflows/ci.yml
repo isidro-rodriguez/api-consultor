@@ -41,7 +41,11 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: uv sync --locked
       # Ollama se simula en los tests; la cobertura mínima (90 %) está en pyproject.
+      # PYTHONWARNDEFAULTENCODING: un fichero sin `encoding` falla también en Linux
+      # (en Windows la codificación por defecto no es UTF-8).
       - run: uv run --locked pytest
+        env:
+          PYTHONWARNDEFAULTENCODING: "1"
 
   package:
     name: Paquete (wheel y sdist)

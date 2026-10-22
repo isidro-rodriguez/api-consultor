@@ -35,7 +35,10 @@ uv run pre-commit run --all-files
 `.github/workflows/ci.yml`, en cada push a `main` y en cada pull request:
 
 - `ruff`, `ty` y `uv.lock` en Linux.
-- Tests con cobertura en Linux y Windows con Python 3.12, 3.13 y 3.14.
+- Tests con cobertura en Linux y Windows con Python 3.12, 3.13 y 3.14, con
+  `PYTHONWARNDEFAULTENCODING=1`: leer o escribir un fichero sin `encoding=` es un error
+  (en Windows la codificación por defecto no es UTF-8). Para comprobarlo en local:
+  `PYTHONWARNDEFAULTENCODING=1 uv run pytest`.
 - Construcción del wheel y el sdist, e instalación del wheel en un entorno limpio.
 
 También se puede lanzar a mano desde *Actions → CI → Run workflow*

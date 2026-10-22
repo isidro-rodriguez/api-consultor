@@ -316,7 +316,10 @@ def test_bundled_stdlib_cases_file_is_well_formed() -> None:
 
 def test_an_empty_expected_list_marks_an_unanswerable_question(tmp_path: Path) -> None:
     path = tmp_path / "casos.toml"
-    path.write_text('[[case]]\nquestion = "¿json.dumps_pretty?"\nexpected = []\n')
+    path.write_text(
+        '[[case]]\nquestion = "¿json.dumps_pretty?"\nexpected = []\n',
+        encoding="utf-8",
+    )
     [case] = load_cases(path)
     assert case.expected == ()
     assert not case.answerable
