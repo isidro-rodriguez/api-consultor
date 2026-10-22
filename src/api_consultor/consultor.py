@@ -55,11 +55,17 @@ _SPANISH = re.compile(
     re.IGNORECASE,
 )
 
-TRANSLATE_SYSTEM = (
-    "You translate programming questions into English for a documentation search "
-    "engine. Reply with the English translation only, in one line, keeping code "
-    "identifiers unchanged. Do not answer the question."
-)
+TRANSLATE_SYSTEM = """\
+You translate Spanish programming questions into English for a documentation search
+engine. Reply with the English translation only, in one line. Keep code identifiers
+unchanged. Never answer the question and never reply in Spanish.
+
+Examples:
+Spanish: copiar un directorio completo con su contenido
+English: copy a whole directory with its contents
+Spanish: convertir un diccionario a una cadena JSON
+English: convert a dictionary to a JSON string
+"""
 """Instrucciones del modelo para traducir la pregunta (sustituyen al `Modelfile`)."""
 
 
@@ -83,15 +89,16 @@ def translate(question: str) -> str | None:
         question: Pregunta del usuario.
 
     Returns:
-        La traducción (una línea), o `None` si el modelo no devuelve nada útil o
-        repite la pregunta.
+        La traducción (una línea), o `None` si el modelo no devuelve nada o sigue
+        en español.
 
     Raises:
         ConnectionError: Si no se puede contactar con Ollama.
     """
-    lines = complete(TRANSLATE_SYSTEM, question).strip().splitlines()
-    text = lines[0].strip().strip('"') if lines else ""
-    if not text or text.casefold() == question.strip().casefold():
+    lines = complete(TRANSLATE_SYSTEM, f"Spanish: {question}\nEnglish:").splitlines()
+    text = next((line.strip() for line in lines if line.strip()), "")
+    text = text.removeprefix("English:").strip().strip('"')
+    if not text or _SPANISH.search(text):  # vacía o sin traducir: no aporta nada
         return None
     return text[:300]
 

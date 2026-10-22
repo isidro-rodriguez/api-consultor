@@ -14,13 +14,17 @@ import sqlite_vec
 
 from .records import Chunk, SourceInfo
 
-FORMAT_VERSION = 5
+FORMAT_VERSION = 6
 """Formato del índice.
 
 1 sin metadatos, 2 con `meta`/`sources`, 3 con `path`/`line`, 4 con rutas relativas
 a la raíz de la fuente y `root`/`python` en `sources`, 5 con `chunks.hash` (caché de
-embeddings) y `sources.module` (paquete importable, distinto del nombre de la fuente).
+embeddings) y `sources.module` (paquete importable, distinto del nombre de la fuente),
+6 con raíces en inglés en la búsqueda por palabras (`replace` encuentra `replacing`).
 """
+
+_FTS_TOKENIZER = "porter unicode61 remove_diacritics 2 tokenchars '_'"
+"""Tokenizador de FTS5: `porter` reduce las palabras inglesas a su raíz."""
 
 _HASH_BATCH = 500
 """Hashes por consulta al buscar embeddings ya calculados (límite de parámetros)."""
@@ -188,8 +192,7 @@ class Store:
             CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks
                 USING vec0(embedding float[{dim}]);
             CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts
-                USING fts5(qualname, content,
-                           tokenize = "unicode61 remove_diacritics 2 tokenchars '_'");
+                USING fts5(qualname, content, tokenize = "{_FTS_TOKENIZER}");
             CREATE TABLE IF NOT EXISTS meta (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
@@ -228,6 +231,7 @@ class Store:
                     "FROM chunks GROUP BY package"
                 )
             self._migrate_hashes_and_modules()
+            self._migrate_fts_stemming()
         self._db.execute("CREATE INDEX IF NOT EXISTS idx_chunks_hash ON chunks(hash)")
         self._check_and_record_meta(dim, model)
 
@@ -257,6 +261,26 @@ class Store:
                 "ALTER TABLE sources ADD COLUMN module TEXT NOT NULL DEFAULT ''"
             )
             self._db.execute("UPDATE sources SET module = name WHERE kind != 'docs'")
+
+    def _migrate_fts_stemming(self) -> None:
+        """Migra al formato 6: rehace el índice de palabras con raíces (`porter`).
+
+        Solo reconstruye `chunks_fts` a partir de `chunks`; los embeddings no cambian.
+        """
+        (sql,) = self._db.execute(
+            "SELECT sql FROM sqlite_master WHERE name = 'chunks_fts'"
+        ).fetchone()
+        if "porter" in sql:
+            return
+        self._db.execute("DROP TABLE chunks_fts")
+        self._db.execute(
+            "CREATE VIRTUAL TABLE chunks_fts USING fts5(qualname, content, "
+            f'tokenize = "{_FTS_TOKENIZER}")'
+        )
+        self._db.execute(
+            "INSERT INTO chunks_fts(rowid, qualname, content) "
+            "SELECT id, qualname, content FROM chunks"
+        )
 
     def _migrate_roots(self) -> None:
         """Pasa un índice anterior al formato 4: raíz por fuente y rutas relativas."""

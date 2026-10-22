@@ -423,3 +423,35 @@ def test_the_index_can_be_read_while_another_process_writes(tmp_path: Path) -> N
         writer.rollback()
     finally:
         writer.close()
+
+
+def test_word_search_matches_english_inflections(store: Store) -> None:
+    text = "Return the string obtained by replacing occurrences."
+    store.replace("re", [Chunk("re.sub", "re", "1", text)], [[1.0, 0, 0, 0]])
+    assert [c.qualname for c in store.lexical('"replace"', 5)] == ["re.sub"]
+
+
+def test_a_format_5_word_index_is_rebuilt_with_stemming(tmp_path: Path) -> None:
+    path = tmp_path / "v5.db"
+    with Store(path, DIM) as store:
+        text = "Return the string obtained by replacing occurrences."
+        store.replace("re", [Chunk("re.sub", "re", "1", text)], [[1.0, 0, 0, 0]])
+    legacy = sqlite3.connect(path)
+    try:  # como un índice 5: tokenizador sin raíces
+        legacy.execute("DROP TABLE chunks_fts")
+        legacy.execute(
+            "CREATE VIRTUAL TABLE chunks_fts USING fts5(qualname, content, "
+            "tokenize = \"unicode61 remove_diacritics 2 tokenchars '_'\")"
+        )
+        legacy.execute(
+            "INSERT INTO chunks_fts(rowid, qualname, content) "
+            "SELECT id, qualname, content FROM chunks"
+        )
+        legacy.execute("UPDATE meta SET value = '5' WHERE key = 'format_version'")
+        legacy.commit()
+    finally:
+        legacy.close()
+    with Store(path, DIM) as migrated:
+        assert migrated.meta()["format_version"] == str(FORMAT_VERSION)
+        assert [c.qualname for c in migrated.lexical('"replace"', 5)] == ["re.sub"]
+        assert migrated.search([1.0, 0, 0, 0], 1)  # los vectores siguen ahí

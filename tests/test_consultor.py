@@ -403,8 +403,10 @@ def test_translation_can_be_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     ("answer", "expected"),
     [
         ('"Copy a directory tree"\nNota: traducido.', "Copy a directory tree"),
+        ("\nEnglish: copy a directory", "copy a directory"),
         ("", None),
         ("  copiar un directorio  ", None),  # repite la pregunta
+        ("Copiar un directorio de Python.", None),  # sigue en español
     ],
 )
 def test_translate_keeps_the_first_line(
@@ -437,7 +439,9 @@ def test_spanish_questions_search_with_the_english_translation(
 ) -> None:
     stub_ollama.translation = "copy a directory tree recursively"
     retrieval = english.search("copiar un directorio completo")
-    assert stub_ollama.translated == ["copiar un directorio completo"]
+    assert stub_ollama.translated == [
+        "Spanish: copiar un directorio completo\nEnglish:"
+    ]
     assert retrieval.translation == "copy a directory tree recursively"
     top = next(c for c in retrieval.candidates if c.chunk.qualname == "fs.copytree")
     assert top.ranks["L"] == 1  # solo la traducción tiene palabras en común

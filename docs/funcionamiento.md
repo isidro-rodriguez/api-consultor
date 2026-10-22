@@ -64,7 +64,7 @@ Cada pregunta se busca por cuatro vías, cada una con su peso:
 | --- | --- | --- |
 | N | nombres cualificados escritos en la pregunta (`json.dumps`) | 3,0 |
 | S | nombres cortos (`dumps`, `most_common`) | 1,5 |
-| L | palabras del contenido (BM25 sobre FTS5) | 1,0 |
+| L | palabras del contenido (BM25 sobre FTS5, con raíces inglesas: `replace` ≈ `replacing`) | 1,0 |
 | V | similitud semántica (distancia entre vectores) | 1,0 |
 
 Los rankings se combinan con **Reciprocal Rank Fusion**: cada fragmento suma
@@ -81,7 +81,8 @@ palabras (L) ni los vectores (V) encuentran bien una pregunta en español. Si la
 pregunta está en español y no nombra ningún símbolo, el modelo de chat la traduce al
 inglés (una línea, sin razonar) y se busca con ambas versiones: L con las palabras de
 las dos y V con la menor distancia de las dos. El modelo responde a la pregunta
-original. Se desactiva con `[retrieval] translate = false`.
+original. Si la «traducción» sigue en español, se descarta. Se desactiva con
+`[retrieval] translate = false`.
 
 `api ask --debug` muestra la traducción, los candidatos con su puntuación, la posición
 en cada señal y la distancia vectorial.
@@ -119,7 +120,7 @@ contenga. Es una mitigación, no una garantía: un modelo de 8B puede dejarse ll
 
 - El índice registra el modelo y la dimensión de los embeddings: con otros distintos se
   niega a insertar o consultar y explica cómo reconstruirlo.
-- El formato está versionado (actualmente 5). Un índice anterior se migra solo al
+- El formato está versionado (actualmente 6). Un índice anterior se migra solo al
   abrirlo, sin reindexar.
 - Las rutas se guardan relativas a la raíz de cada fuente; si la carpeta se mueve,
   `api sources --relocate` la recoloca.

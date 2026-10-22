@@ -44,6 +44,11 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Cambiado
 
+- Formato de índice 6: la búsqueda por palabras reduce las palabras inglesas a su raíz
+  (`replace` encuentra `replacing`). Un índice anterior se migra solo al abrirlo
+  (rehace el índice de palabras; los embeddings no cambian).
+- La traducción de la pregunta lleva ejemplos y se descarta si el modelo responde en
+  español (antes «Convertir un diccionario…» volvía sin traducir).
 - Respuestas más desarrolladas: el `Modelfile` pide explicación (parámetros, valores
   por defecto, retorno, excepciones) y un ejemplo completo y ejecutable en las
   preguntas de uso, con un tope de 2048 tokens (`num_predict`). Ejecuta `api setup`.
