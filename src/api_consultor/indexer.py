@@ -8,7 +8,7 @@ import inspect
 import logging
 import pkgutil
 import sys
-from collections.abc import Collection, Iterator
+from collections.abc import Collection, Iterable, Iterator
 from functools import cached_property
 from pathlib import Path
 from types import ModuleType
@@ -106,19 +106,25 @@ def _walk_modules(package: str) -> Iterator[ModuleType]:
     root = importlib.import_module(package)
     yield root
     path = getattr(root, "__path__", None)  # los módulos de un solo fichero no tienen
-    if path is None:
-        return
-    for info in pkgutil.walk_packages(
-        path,
-        prefix=f"{package}.",
-        onerror=lambda name: log.warning("No se pudo importar %s", name),
-    ):
-        if any(part.startswith("_") for part in info.name.split(".")):
+    if path is not None:
+        yield from _walk_submodules(path, f"{package}.")
+
+
+def _walk_submodules(path: Iterable[str], prefix: str) -> Iterator[ModuleType]:
+    # Como `pkgutil.walk_packages`, pero importando aquí cada subpaquete: aquel deja
+    # escapar el `SystemExit` de un `__init__` y abortaría todo el indexado.
+    for info in pkgutil.iter_modules(path, prefix):
+        if info.name.rpartition(".")[2].startswith("_"):  # privado, y todo lo de dentro
             continue
         try:
-            yield importlib.import_module(info.name)
+            module = importlib.import_module(info.name)
         except (Exception, SystemExit):  # código de terceros: cualquier fallo vale
             log.warning("No se pudo importar %s", info.name)
+            continue
+        yield module
+        subpath = getattr(module, "__path__", None)
+        if info.ispkg and subpath is not None:
+            yield from _walk_submodules(subpath, f"{info.name}.")
 
 
 def _public_members(module: ModuleType, package: str) -> Iterator[tuple[str, object]]:

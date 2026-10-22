@@ -14,6 +14,9 @@ PROBE = Path(__file__).resolve().with_name("probe.py")
 NOT_FOUND, IMPORT_FAILED = 4, 5
 """Códigos de salida de la sonda (ver `probe`)."""
 
+PROBE_TIMEOUT = 600.0
+"""Segundos máximos que puede tardar la sonda (un import colgado no bloquea la app)."""
+
 
 class ProbeError(RuntimeError):
     """No se pudo ejecutar la sonda con el intérprete indicado."""
@@ -55,8 +58,16 @@ def _run(python: str, *args: str) -> subprocess.CompletedProcess[str]:
             capture_output=True,
             text=True,
             encoding="utf-8",
+            stdin=subprocess.DEVNULL,  # un `input()` al importar no espera para siempre
+            timeout=PROBE_TIMEOUT,
             check=False,
         )
+    except subprocess.TimeoutExpired as exc:
+        message = (
+            f"La sonda no terminó en {PROBE_TIMEOUT:g} s con {python} "
+            "(¿un import que se queda colgado?)."
+        )
+        raise ProbeError(message) from exc
     except OSError as exc:
         message = f"No se pudo ejecutar {python}: {exc.strerror or exc}."
         raise ProbeError(message) from exc

@@ -7,10 +7,19 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Corregido
+
+- Un subpaquete cuyo `__init__` hace `raise SystemExit` abortaba todo el indexado
+  (`pkgutil.walk_packages` no lo captura); ahora se omite con un aviso.
+- La sonda de `--python` ya no puede quedarse colgada: se cancela a los 10 minutos y
+  recibe la entrada estándar vacía (un `input()` al importar no la bloquea).
+
 ### Cambiado
 
 - El CI se puede lanzar a mano (`workflow_dispatch`) y `docs/desarrollo.md` pide
   verlo en verde en `main` antes de etiquetar.
+- La documentación advierte de que indexar un paquete ejecuta su código y de qué API
+  dinámica no se ve.
 
 ## [0.4.0] - 2026-10-22
 

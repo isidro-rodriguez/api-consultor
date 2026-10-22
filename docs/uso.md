@@ -35,9 +35,13 @@ api index --stdlib -p .venv     # la stdlib de otra versión de Python
   la carpeta del venv o directamente su ejecutable de Python.
 - **Cómo funciona `--python`.** Se lanza una *sonda* (`probe.py`, solo biblioteca
   estándar) con el intérprete del entorno; importa el paquete allí y devuelve los
-  fragmentos en JSON. El entorno objetivo necesita Python 3.12 o superior.
+  fragmentos en JSON. El entorno objetivo necesita Python 3.12 o superior. Si tarda
+  más de 10 minutos (un import que se queda colgado) se aborta con un error.
+- **Indexar ejecuta código.** Para leer la API hay que importar el paquete, y eso
+  ejecuta su código (con o sin `--python`; `python -I` no es un *sandbox*). Indexa
+  solo paquetes en los que confíes, igual que al instalarlos.
 - **Qué se omite.** Nombres privados (`_algo`), símbolos sin docstring y submódulos que
-  fallan al importarse (se avisa y se continúa).
+  fallan al importarse, incluso con `SystemExit` (se avisa y se continúa).
 - **Fragmentos largos.** Un docstring de más de ~2000 caracteres se divide por secciones
   en varios fragmentos (`nombre [2]`, `nombre [3]`…), sin perder texto.
 - **Versión.** Se resuelve por la distribución instalada (`yaml` → PyYAML); la de la

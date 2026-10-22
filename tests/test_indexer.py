@@ -275,3 +275,36 @@ def test_modules_without_public_members_are_still_indexed(
 ) -> None:
     package = make_package("synth_empty", {"__init__.py": '"""Solo docstring."""\n'})
     assert {c.qualname for c in extract_chunks(package)} == {"synth_empty"}
+
+
+def test_a_subpackage_raising_system_exit_is_skipped(
+    make_package: PackageFactory, caplog: pytest.LogCaptureFixture
+) -> None:
+    # `pkgutil.walk_packages` dejaba escapar este `SystemExit` y abortaba el indexado.
+    name = make_package(
+        "salida_sub",
+        {
+            "__init__.py": "def raiz() -> None:\n    '''Raíz.'''\n",
+            "roto/__init__.py": "raise SystemExit\n",
+            "roto/hijo.py": "def hijo() -> None:\n    '''No se alcanza.'''\n",
+            "sano/__init__.py": "",
+            "sano/hondo.py": "def hondo() -> None:\n    '''Anidado.'''\n",
+        },
+    )
+    with caplog.at_level(logging.WARNING):
+        qualnames = {chunk.qualname for chunk in extract_chunks(name)}
+    assert {"salida_sub.raiz", "salida_sub.sano.hondo.hondo"} <= qualnames
+    assert not any("hijo" in q for q in qualnames)
+    assert "salida_sub.roto" in caplog.text
+
+
+def test_private_subpackages_are_not_imported(make_package: PackageFactory) -> None:
+    name = make_package(
+        "con_privado",
+        {
+            "__init__.py": "",
+            "_interno/__init__.py": "raise RuntimeError('no debería importarse')\n",
+            "publico.py": "def f() -> None:\n    '''F.'''\n",
+        },
+    )
+    assert "con_privado.publico.f" in {c.qualname for c in extract_chunks(name)}

@@ -105,6 +105,9 @@ ninguna cita.
 
 - La calidad depende de la documentación: los símbolos sin docstring no se indexan.
 - Un docstring repartido en varios fragmentos puede llegar al modelo solo en parte.
+- Solo se ve la API que existe tras importar: lo que se crea bajo demanda
+  (`__getattr__` de módulo, *lazy imports*, proxies) o vive en extensiones C sin
+  docstrings puede faltar.
 - Sin `max_distance` siempre se responde con lo recuperado, aunque sea poco relevante.
 - La sonda de `--python` necesita Python 3.12+ en el entorno objetivo.
 - Un paquete sin metadatos de distribución aparece como «no instalada».

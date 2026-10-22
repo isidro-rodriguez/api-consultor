@@ -437,3 +437,28 @@ def test_the_same_package_from_two_environments_keeps_both(
         assert len(store.sources()) == 2
     answer = runner.invoke(app, ["ask", "-s", name, "¿saluda?"])
     assert answer.exit_code == 0, answer.output
+
+
+def test_a_hanging_probe_times_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    hanging = tmp_path / "sonda_colgada.py"
+    hanging.write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
+    monkeypatch.setattr(external, "PROBE", hanging)
+    monkeypatch.setattr(external, "PROBE_TIMEOUT", 0.5)
+    with pytest.raises(ProbeError, match=r"no terminó en 0\.5 s"):
+        remote_versions(sys.executable, ["json"])
+
+
+def test_a_probe_reading_stdin_does_not_wait(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Un paquete que llama a `input()` al importarse recibe EOF en vez de bloquear.
+    reader = tmp_path / "sonda_lectora.py"
+    reader.write_text(
+        "import json, sys\nsys.stdin.read()\nprint(json.dumps({'json': '1'}))\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(external, "PROBE", reader)
+    monkeypatch.setattr(external, "PROBE_TIMEOUT", 20.0)
+    assert remote_versions(sys.executable, ["json"]) == {"json": "1"}
