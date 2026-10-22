@@ -38,6 +38,9 @@ uv run pre-commit run --all-files
 - Tests con cobertura en Linux y Windows con Python 3.12, 3.13 y 3.14.
 - Construcción del wheel y el sdist, e instalación del wheel en un entorno limpio.
 
+También se puede lanzar a mano desde *Actions → CI → Run workflow*
+(`workflow_dispatch`) o con `gh workflow run ci.yml --ref main`.
+
 Dependabot propone cada semana actualizaciones de dependencias (`uv`) y de las acciones.
 
 ## Publicar una versión
@@ -45,7 +48,14 @@ Dependabot propone cada semana actualizaciones de dependencias (`uv`) y de las a
 1. Sube `version` en `pyproject.toml` (`uv version --bump patch|minor|major`).
 2. Mueve lo de «Sin publicar» a la nueva versión en
    [CHANGELOG.md](https://github.com/isidro-rodriguez/api-consultor/blob/main/CHANGELOG.md).
-3. Commit y etiqueta: `git tag vX.Y.Z && git push --tags`.
+3. Commit y `git push`; espera a que el **CI de `main` esté en verde en Linux y
+   Windows** (`gh run watch` o la pestaña *Actions*).
+4. Solo entonces etiqueta: `git tag -a vX.Y.Z -m vX.Y.Z && git push --tags`.
+
+Etiquetar antes de ver el CI obliga a mover la etiqueta si falla (como en 0.4.0). Si
+aun así ocurre y la versión **no** llegó a PyPI, corrige en `main`, borra la etiqueta
+(`git push --delete origin vX.Y.Z`, `git tag -d vX.Y.Z`) y vuelve a crearla; si ya
+está publicada, la corrección sale en la siguiente versión de parche.
 
 `publish.yml` comprueba que la etiqueta coincide con la versión, ejecuta el CI y
 publica en PyPI mediante **publicación de confianza** (OIDC, sin tokens guardados).

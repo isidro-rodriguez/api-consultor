@@ -5,16 +5,14 @@ Todos los cambios relevantes de este proyecto se documentan aquí.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el
 proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
+## [Sin publicar]
+
+### Cambiado
+
+- El CI se puede lanzar a mano (`workflow_dispatch`) y `docs/desarrollo.md` pide
+  verlo en verde en `main` antes de etiquetar.
+
 ## [0.4.0] - 2026-10-22
-
-### Añadido
-
-- `api ask --source/-s FUENTE` (repetible) limita la búsqueda a esas fuentes; acepta
-  el nombre de la fuente, el del paquete (todas sus fuentes) o `stdlib`.
-- Caché de embeddings: al reindexar (`api sources -u`, `api index`, `api index-docs`)
-  solo se calculan los fragmentos nuevos o cambiados; el resto reutiliza su vector.
-- Si un paquete no está en el entorno de la herramienta pero sí en el venv activo o en
-  `./.venv`, el aviso sugiere el comando exacto (`api index X -p .venv`).
 
 ### Añadido
 
@@ -35,7 +33,6 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 - `render.py` pasa a ser el paquete `render/` (tema, ayuda de Typer, mensajes,
   respuesta y tablas); los parches de API privada de Typer quedan aislados en
   `render/typer_help.py` y la dependencia se acota a `typer<0.28`.
-
 - README reducido a instalación (desde PyPI), uso, configuración y desarrollo; el
   detalle pasa a `docs/` (uso, configuración, funcionamiento, evaluación y desarrollo).
 
