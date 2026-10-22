@@ -28,6 +28,10 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Cambiado
 
+- El mensaje al modelo separa datos e instrucciones: fragmentos en `<docs>`, pregunta
+  en `<question>` (con sus etiquetas escapadas) y reglas al final. El `Modelfile`
+  trata la documentación recuperada como datos no confiables: ejecuta `api setup`
+  para recrear el modelo `api-consultor`.
 - El CI se puede lanzar a mano (`workflow_dispatch`) y `docs/desarrollo.md` pide
   verlo en verde en `main` antes de etiquetar.
 - La documentación advierte de que indexar un paquete ejecuta su código y de qué API

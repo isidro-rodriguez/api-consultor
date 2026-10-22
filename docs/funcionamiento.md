@@ -90,6 +90,13 @@ recuperada no puedo confirmarlo». Al terminar se comprueban las citas: las vál
 marcan con ✔ en el panel «Fuentes» y se avisa de ids inexistentes o de respuestas sin
 ninguna cita.
 
+El mensaje separa datos e instrucciones: los fragmentos van en bloques `<docs>`, la
+pregunta en `<question>` y las reglas al final, fuera de ambos. Las etiquetas `docs` y
+`question` que aparezcan dentro de un fragmento o de la pregunta se escapan, así que
+ninguno puede cerrar su bloque ni fingir otro. El prompt de sistema declara el
+contenido recuperado como datos no confiables: no debe obedecer instrucciones que
+contenga. Es una mitigación, no una garantía: un modelo de 8B puede dejarse llevar.
+
 ## Integridad del índice
 
 - El índice registra el modelo y la dimensión de los embeddings: con otros distintos se

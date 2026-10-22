@@ -150,13 +150,33 @@ class Retrieval:
     abstain_reason: str | None = None
 
 
-_DOCS_TAG = re.compile(r"<(/?)(docs)\b", re.IGNORECASE)
-"""Etiquetas `<docs`/`</docs` dentro de un fragmento (cerrarían su bloque antes)."""
+_TAGS = re.compile(r"<(/?)(docs|question)\b", re.IGNORECASE)
+"""Etiquetas `<docs`/`<question` dentro de un texto (abrirían o cerrarían bloques)."""
 
 
 def _neutralize(content: str) -> str:
-    """Escapa las etiquetas `docs` del contenido; el resto del texto queda intacto."""
-    return _DOCS_TAG.sub(r"&lt;\1\2", content)
+    """Escapa las etiquetas `docs`/`question` del texto; el resto queda intacto."""
+    return _TAGS.sub(r"&lt;\1\2", content)
+
+
+def build_prompt(question: str, chunks: list[Chunk]) -> str:
+    """Compone el mensaje para el modelo: datos, pregunta e instrucciones, separados.
+
+    El contexto va en bloques `<docs>` y la pregunta en `<question>`, ambos con sus
+    etiquetas neutralizadas para que ninguno pueda cerrar el suyo ni fingir otro (p. ej.
+    un `[DOC-09]` inexistente). Las instrucciones van al final y fuera de los bloques.
+
+    Args:
+        question: Pregunta del usuario.
+        chunks: Fragmentos del contexto (se numeran como `DOC-NN`).
+
+    Returns:
+        El contenido del mensaje de usuario.
+    """
+    return (
+        f"{format_context(chunks)}\n\n"
+        f"<question>\n{_neutralize(question)}\n</question>\n\n{INSTRUCTION}"
+    )
 
 
 def format_context(chunks: list[Chunk]) -> str:
@@ -164,9 +184,9 @@ def format_context(chunks: list[Chunk]) -> str:
 
     Cada fragmento va en un bloque `<docs id="DOC-NN" ...>` con sus atributos
     escapados, para que el modelo pueda citarlo por su identificador. Las etiquetas
-    `docs` que aparezcan en el contenido (p. ej. documentación sobre este mismo
-    formato) se escapan para que no cierren ni abran bloques; el código con `<` o
-    `>` se conserva tal cual.
+    `docs` o `question` que aparezcan en el contenido (p. ej. documentación sobre
+    este mismo formato) se escapan para que no cierren ni abran bloques; el código
+    con `<` o `>` se conserva tal cual.
 
     Args:
         chunks: Fragmentos elegidos, en el orden en que se numeran.
@@ -292,5 +312,5 @@ class Consultor:
         Yields:
             Los trozos de la respuesta según los genera el modelo.
         """
-        content = f"{format_context(chunks)}\n\n{INSTRUCTION}\n\nPregunta: {question}"
+        content = build_prompt(question, chunks)
         yield from stream_chat([{"role": "user", "content": content}])
