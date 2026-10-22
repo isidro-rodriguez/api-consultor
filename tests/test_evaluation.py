@@ -10,6 +10,8 @@ from api_consultor import render
 from api_consultor.cli import app
 from api_consultor.evaluation import (
     EvalCase,
+    EvalReport,
+    Hits,
     evaluate,
     first_relevant_rank,
     load_cases,
@@ -140,7 +142,6 @@ def test_load_cases_reads_toml(tmp_path: Path) -> None:
         ('[[case]]\nexpected = ["a"]\n', "falta 'question'"),
         ('[[case]]\nquestion = "  "\nexpected = ["a"]\n', "falta 'question'"),
         ('[[case]]\nquestion = "q"\n', "'expected'"),
-        ('[[case]]\nquestion = "q"\nexpected = []\n', "'expected'"),
         ('[[case]]\nquestion = "q"\nexpected = [1]\n', "'expected'"),
         ('[[case]]\nquestion = "q"\nexpected = ["a"]\ncategory = 3\n', "'category'"),
         ('case = "no es una lista"\n', "lista de tablas"),
@@ -311,3 +312,97 @@ def test_bundled_stdlib_cases_file_is_well_formed() -> None:
         "nombre-simple",
         "descripcion",
     }
+
+
+def test_an_empty_expected_list_marks_an_unanswerable_question(tmp_path: Path) -> None:
+    path = tmp_path / "casos.toml"
+    path.write_text('[[case]]\nquestion = "¿json.dumps_pretty?"\nexpected = []\n')
+    [case] = load_cases(path)
+    assert case.expected == ()
+    assert not case.answerable
+
+
+def abstention_report() -> EvalReport:
+    distances = {"sí-1": 0.20, "sí-2": 0.35, "no-1": 0.60, "no-2": 0.80, "no-n": None}
+    cases = [
+        EvalCase("sí-1", ("a",), "api"),
+        EvalCase("sí-2", ("a",), "api"),
+        EvalCase("no-1", (), "inexistente"),
+        EvalCase("no-2", (), "inexistente"),
+        EvalCase("no-n", (), "inexistente"),  # coincide por nombre: nunca calla
+    ]
+    return evaluate(lambda q, _k: Hits([chunk("a")], distances[q]), cases, ks=(1,))
+
+
+def test_unanswerable_cases_do_not_count_in_recall_nor_failures() -> None:
+    report = abstention_report()
+    assert report.metrics().cases == 2
+    assert report.metrics().recall[1] == 1.0
+    assert report.categories == ["api"]
+    assert report.failures(1) == []
+
+
+def test_abstention_counts_false_and_lost_answers() -> None:
+    report = abstention_report()
+    off = report.abstention(None)
+    assert (off.false_answers, off.unanswerable, off.lost) == (3, 3, 0)
+    assert off.by_name == 1
+    strict = report.abstention(0.3)
+    assert (strict.false_answers, strict.lost, strict.answerable) == (1, 1, 2)
+    assert strict.false_answer_rate == pytest.approx(1 / 3)
+    assert strict.lost_rate == 0.5
+
+
+def test_suggested_threshold_separates_both_groups_with_margin() -> None:
+    report = abstention_report()
+    suggested = report.suggest_threshold()
+    assert suggested == pytest.approx(0.475)  # entre 0,35 (sí) y 0,60 (no)
+    best = report.abstention(suggested)
+    assert (best.false_answers, best.lost) == (1, 0)  # solo la de nombre se escapa
+
+
+def test_no_suggestion_without_both_kinds_of_cases() -> None:
+    only_positive = evaluate(
+        lambda _q, _k: Hits([chunk("a")], 0.2), [EvalCase("q", ("a",))], ks=(1,)
+    )
+    assert only_positive.suggest_threshold() is None
+    assert only_positive.abstention(0.1).unanswerable == 0
+    without_distances = evaluate(
+        lambda _q, _k: [chunk("a")],
+        [EvalCase("q", ("a",)), EvalCase("n", ())],
+        ks=(1,),
+    )
+    assert without_distances.suggest_threshold() is None
+
+
+def test_show_evaluation_reports_abstention_and_suggests_a_threshold() -> None:
+    buffer = StringIO()
+    original = render.theme.console
+    render.theme.console = Console(file=buffer, width=140, theme=render.THEME)
+    try:
+        render.show_evaluation(abstention_report(), threshold=0.3)
+    finally:
+        render.theme.console = original
+    text = " ".join(buffer.getvalue().split())
+    assert "max_distance = 0.3: responde 1/3 sin respuesta (1 por nombre)" in text
+    assert "calla 1/2 con respuesta" in text
+    assert "sugerido 0.475: responde 1/3" in text
+    assert "max_distance = 0.475 en config.toml" in text
+    assert "coinciden por nombre" in text
+    assert "no-n" in text  # la que se responde aun con el umbral sugerido
+    assert "no-1" not in text
+
+
+def test_eval_command_measures_abstention(indexed: Path) -> None:
+    path = indexed / "casos.toml"
+    path.write_text(
+        '[[case]]\nquestion = "os.listdir"\nexpected = ["os.md#*"]\n'
+        '[[case]]\nquestion = "receta de paella valenciana"\nexpected = []\n',
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["eval", str(path), "-v"])
+    assert result.exit_code == 0, result.output
+    flat = " ".join(result.output.split())
+    assert "Abstención" in flat
+    assert "desactivada: responde 1/1 sin respuesta" in flat
+    assert "receta de paella" in flat

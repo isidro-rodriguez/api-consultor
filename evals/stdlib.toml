@@ -7,7 +7,8 @@
 #
 # `expected` admite nombres exactos, patrones con `*` y alternativas con `|`:
 #   "json.dumps|library/json.txt#*"  ->  la API indexada o cualquier trozo de su página.
-# Cada pregunta debería tener una fuente que la responda sin ambigüedad.
+# Cada pregunta debería tener una fuente que la responda sin ambigüedad, salvo las de
+# `expected = []` (sin respuesta: al final del fichero).
 
 # --- Nombre cualificado en la pregunta ---------------------------------------------
 
@@ -115,3 +116,38 @@ expected = ["re.sub|library/re.txt#*"]
 category = "descripcion"
 question = "convertir un diccionario de Python a una cadena JSON"
 expected = ["json.dumps|library/json.txt#*"]
+
+# --- Sin respuesta en el índice: lo correcto es abstenerse -------------------------
+# `expected = []`: APIs inexistentes o temas ajenos. Miden las respuestas falsas y
+# sirven a `api eval` para sugerir `max_distance`. Añade las tuyas: cuantas más, mejor
+# calibrado.
+
+[[case]]
+category = "sin-respuesta"
+question = "¿Cómo comprimo un JSON con json.compress?"
+expected = []
+
+[[case]]
+category = "sin-respuesta"
+question = "¿Qué hace pathlib.Path.teleport?"
+expected = []
+
+[[case]]
+category = "sin-respuesta"
+question = "¿Cómo cancelo todas las tareas con asyncio.cancel_everything?"
+expected = []
+
+[[case]]
+category = "sin-respuesta"
+question = "¿Qué parámetros acepta collections.SuperDict?"
+expected = []
+
+[[case]]
+category = "sin-respuesta"
+question = "enviar un correo electrónico con adjuntos"
+expected = []
+
+[[case]]
+category = "sin-respuesta"
+question = "dibujar un gráfico de barras con colores"
+expected = []

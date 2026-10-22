@@ -16,7 +16,7 @@ from rich.progress import (
 from rich.table import Column, Table
 from rich.text import Text
 
-from ..evaluation import EvalReport
+from ..evaluation import Abstention, EvalReport
 from ..records import SourceInfo
 from ..versions import VersionStatus
 from . import theme
@@ -78,12 +78,15 @@ def _score(value: float, *, percent: bool) -> Text:
     return Text(f"{value:.0%}" if percent else f"{value:.3f}", style=style)
 
 
-def show_evaluation(report: EvalReport, *, verbose: bool = False) -> None:
-    """Muestra las métricas (globales y por categoría) y los casos fallidos.
+def show_evaluation(
+    report: EvalReport, *, verbose: bool = False, threshold: float | None = None
+) -> None:
+    """Muestra las métricas (globales y por categoría), los fallos y la abstención.
 
     Args:
         report: Informe de la evaluación.
         verbose: Si es `True`, lista todos los casos y no solo los fallos.
+        threshold: `max_distance` configurado, para medir su abstención.
     """
     table = Table(
         title="Evaluación de la recuperación",
@@ -110,12 +113,21 @@ def show_evaluation(report: EvalReport, *, verbose: bool = False) -> None:
         )
     theme.console.print(theme.fit(table))
 
+    _show_cases(report, verbose=verbose)
+    _show_abstention(report, threshold, verbose=verbose)
+
+
+def _show_cases(report: EvalReport, *, verbose: bool) -> None:
     within = 5 if 5 in report.ks else report.ks[-1]
-    shown = list(report.results) if verbose else report.failures(within)
+    answerable = [r for r in report.results if r.case.answerable]
+    shown = answerable if verbose else report.failures(within)
     if not shown:
-        theme.console.print(
-            Text(f"\n✔ Todos los casos aciertan en el top-{within}", style="success")
-        )
+        if answerable:
+            theme.console.print(
+                Text(
+                    f"\n✔ Todos los casos aciertan en el top-{within}", style="success"
+                )
+            )
         return
     detail = Table(
         title="Casos" if verbose else f"Fallos (fuera del top-{within})",
@@ -143,6 +155,87 @@ def show_evaluation(report: EvalReport, *, verbose: bool = False) -> None:
             Text(", ".join(result.case.expected)),
             Text(first, style="muted"),
         )
+    theme.console.print()
+    theme.console.print(theme.fit(detail))
+
+
+def _abstention_line(label: str, result: Abstention) -> Text:
+    line = Text(f"{label}: ", style="info")
+    line.append(
+        f"responde {result.false_answers}/{result.unanswerable} sin respuesta",
+        style="success" if result.false_answers == 0 else "error",
+    )
+    if result.by_name:
+        line.append(f" ({result.by_name} por nombre)", style="muted")
+    line.append(" · ")
+    line.append(
+        f"calla {result.lost}/{result.answerable} con respuesta",
+        style="success" if result.lost == 0 else "warning",
+    )
+    return line
+
+
+def _show_abstention(
+    report: EvalReport, threshold: float | None, *, verbose: bool
+) -> None:
+    """Respuestas falsas y perdidas con el umbral actual y con el sugerido."""
+    current = report.abstention(threshold)
+    if not current.unanswerable:
+        return
+    theme.console.print()
+    theme.console.print(Text("Abstención", style="title"))
+    label = "desactivada" if threshold is None else f"max_distance = {threshold:g}"
+    theme.console.print(_abstention_line(label, current))
+    suggested = report.suggest_threshold()
+    if suggested is not None and suggested != threshold:
+        theme.console.print(
+            _abstention_line(f"sugerido {suggested:g}", report.abstention(suggested))
+        )
+        theme.console.print(
+            Text(
+                f"  [retrieval] max_distance = {suggested:g} en config.toml "
+                "(calíbralo con más casos antes de fiarte).",
+                style="muted",
+            )
+        )
+    if current.by_name:
+        theme.console.print(
+            Text(
+                "  Las que coinciden por nombre con algún símbolo se responden con "
+                "cualquier umbral.",
+                style="muted",
+            )
+        )
+    effective = threshold if suggested is None else suggested
+    negatives = [r for r in report.results if not r.case.answerable]
+    shown = (
+        negatives if verbose else [r for r in negatives if not r.abstains(effective)]
+    )
+    if not shown:
+        return
+    detail = Table(
+        title="Sin respuesta" if verbose else "Sin respuesta que se responden",
+        title_style="title",
+        title_justify="left",
+        box=box.ROUNDED,
+        border_style="muted",
+        header_style=f"bold {FG}",
+        expand=True,
+    )
+    detail.add_column("Distancia", justify="right", no_wrap=True, min_width=9)
+    for name, ratio in (("Pregunta", 6), ("Primer resultado", 5)):
+        detail.add_column(name, ratio=ratio, overflow="ellipsis", no_wrap=True)
+    for result in shown:
+        distance = (
+            Text("nombre", style="error")
+            if result.distance is None
+            else Text(
+                f"{result.distance:.3f}",
+                style="success" if result.abstains(effective) else "warning",
+            )
+        )
+        first = result.ranked[0] if result.ranked else "—"
+        detail.add_row(distance, Text(result.case.question), Text(first, style="muted"))
     theme.console.print()
     theme.console.print(theme.fit(detail))
 

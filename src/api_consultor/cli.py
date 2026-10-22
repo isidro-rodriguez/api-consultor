@@ -927,9 +927,9 @@ def eval_command(
         with progress_bar() as progress, _handled_errors():
             task = progress.add_task("Evaluando", total=len(loaded))
             report = evaluate(
-                consultor.retrieve,
+                lambda question, k: consultor.search(question, k).hits(),
                 loaded,
                 ks,
                 on_result=lambda _result: progress.advance(task),
             )
-    show_evaluation(report, verbose=verbose)
+    show_evaluation(report, verbose=verbose, threshold=SETTINGS.max_distance)

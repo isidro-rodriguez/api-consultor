@@ -79,7 +79,9 @@ la distancia vectorial.
 
 Si se define `[retrieval] max_distance`, la consulta no se responde cuando no hay
 coincidencia de nombre y el vecino más cercano supera ese umbral. Así se evita que el
-modelo «rellene» con fragmentos poco relacionados. Por defecto está desactivado.
+modelo «rellene» con fragmentos poco relacionados. Por defecto está desactivado
+porque la distancia útil depende del modelo de embeddings y de lo indexado: `api eval`
+con preguntas sin respuesta sugiere el valor (ver [evaluacion.md](evaluacion.md)).
 
 ## Respuesta y citas
 
@@ -118,6 +120,8 @@ contenga. Es una mitigación, no una garantía: un modelo de 8B puede dejarse ll
   (`__getattr__` de módulo, *lazy imports*, proxies) o vive en extensiones C sin
   docstrings puede faltar.
 - Sin `max_distance` siempre se responde con lo recuperado, aunque sea poco relevante.
+  Con él, una coincidencia de nombre con cualquier símbolo sigue evitando la
+  abstención.
 - La sonda de `--python` necesita Python 3.12+ en el entorno objetivo.
 - Un paquete sin metadatos de distribución aparece como «no instalada».
 - Cada `api index-docs` vuelve a extraer los `.zip` completos (los embeddings sí

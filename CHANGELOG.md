@@ -23,11 +23,16 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Añadido
 
+- `api eval` mide la abstención: las preguntas con `expected = []` (sin respuesta en
+  el índice) cuentan respuestas falsas y perdidas con el `max_distance` actual y se
+  sugiere el umbral que mejor separa ambos grupos. `evals/stdlib.toml` trae seis.
 - Límites de tamaño en `api index-docs` (20 MiB por fichero, 512 MiB y 20 000
   ficheros por fuente) contra bombas zip y carpetas equivocadas.
 
 ### Cambiado
 
+- `api eval` mide Recall@k y MRR sin aplicar `max_distance` (antes una abstención
+  contaba como fallo de recuperación) y solo con las preguntas que tienen respuesta.
 - El mensaje al modelo separa datos e instrucciones: fragmentos en `<docs>`, pregunta
   en `<question>` (con sus etiquetas escapadas) y reglas al final. El `Modelfile`
   trata la documentación recuperada como datos no confiables: ejecuta `api setup`

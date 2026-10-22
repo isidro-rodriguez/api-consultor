@@ -35,10 +35,10 @@ declares terminada una tarea que no hayas ejecutado.
 | `probe.py`      | Guion stdlib que corre con el Python de otro entorno (extrae chunks/versiones; JSON).           |
 | `docs.py`       | Lee `.txt`/`.md`/`.rst` (sueltos, carpetas, `.zip`) y los trocea por secciones.                 |
 | `store.py`      | SQLite + `sqlite-vec` + FTS5 + metadatos (`meta`, `sources`); valida modelo y dimensión.        |
-| `consultor.py`  | RAG: `retrieve()` (nombres + FTS5 + vectorial, fusión RRF) y `stream()`.                        |
+| `consultor.py`  | RAG: `retrieve()` (nombres + FTS5 + vectorial, fusión RRF) y `stream()` (`build_prompt`).       |
 | `versions.py`   | Versión instalada (distribución ≠ módulo) y estado de cada fuente indexada.                     |
 | `userconfig.py` | `config.toml` del usuario (sobrescribe `Settings`, plantilla de enlaces) y `api config`.        |
-| `evaluation.py` | Recall@k, MRR y carga de casos de `api eval`.                                                   |
+| `evaluation.py` | Recall@k, MRR, abstención (umbral sugerido) y carga de casos de `api eval`.                     |
 | `llm.py`        | Capa fina sobre el cliente de Ollama (`embed`, `stream_chat`).                                  |
 | `render/`       | Toda la salida de consola (ver abajo).                                                          |
 | `config.py`     | `Settings` inmutable (modelos, rutas, `retrieval_k`, `retrieval_candidates`, ancho de consola). |

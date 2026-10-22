@@ -46,8 +46,10 @@ url = "{uri}"              # plantilla de enlace de las fuentes
   mensaje claro antes de ejecutar nada.
 - **Cambiar `embed` o `embed_dim` invalida el índice**: la CLI se niega a mezclar
   vectores incompatibles y explica cómo reconstruirlo (borrar la base y reindexar).
-- `max_distance` se calibra mirando las distancias de `api ask --debug` con preguntas
-  que sí y que no deberían responderse.
+- `max_distance` (recomendado activarlo) se calibra con `api eval`: añade preguntas
+  sin respuesta (`expected = []`) y usa el umbral que sugiere (ver
+  [evaluacion.md](evaluacion.md#abstención)). `api ask --debug` muestra la distancia
+  de una pregunta concreta.
 - Subir `k` da más contexto al modelo a costa de memoria y velocidad; con 8 GB de VRAM
   y contexto de 8k tokens, 5 fragmentos de ~2000 caracteres es un buen equilibrio.
 

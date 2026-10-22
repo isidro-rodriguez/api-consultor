@@ -1,5 +1,6 @@
 """Flujo RAG: recuperar fragmentos y preguntar al modelo."""
 
+import math
 import re
 from collections.abc import Collection, Iterator, Sequence
 from dataclasses import dataclass, field
@@ -7,6 +8,7 @@ from html import escape
 
 from .citations import INSTRUCTION, doc_id
 from .config import SETTINGS
+from .evaluation import Hits
 from .llm import embed, stream_chat
 from .store import Chunk, Store
 
@@ -140,6 +142,7 @@ class Retrieval:
         terms: Palabras significativas de la pregunta.
         best_distance: Menor distancia vectorial encontrada, si hubo.
         abstain_reason: Por qué no se responde, o `None` si se responde.
+        name_match: Si algún símbolo coincide por nombre (entonces nunca se abstiene).
     """
 
     chunks: list[Chunk]
@@ -148,6 +151,22 @@ class Retrieval:
     terms: list[str] = field(default_factory=list)
     best_distance: float | None = None
     abstain_reason: str | None = None
+    name_match: bool = False
+
+    def hits(self) -> Hits:
+        """Lo elegido sin aplicar la abstención, con su distancia (para `api eval`).
+
+        Returns:
+            Los fragmentos seleccionados y la distancia que decide la abstención:
+            `None` si hay coincidencia de nombre, `inf` si no hubo ningún vecino.
+        """
+        chosen = [
+            candidate.chunk for candidate in self.candidates if candidate.selected
+        ]
+        if self.name_match:
+            return Hits(chosen)
+        best = math.inf if self.best_distance is None else self.best_distance
+        return Hits(chosen, best)
 
 
 _TAGS = re.compile(r"<(/?)(docs|question)\b", re.IGNORECASE)
@@ -281,7 +300,8 @@ class Consultor:
             for chunk, score, ranks in fused
         ]
         best = min(distances.values(), default=None)
-        reason = self._abstain_reason(bool(qualified or short), best)
+        name_match = bool(qualified or short)
+        reason = self._abstain_reason(name_match, best)
         return Retrieval(
             [] if reason is not None else selected,
             candidates,
@@ -289,6 +309,7 @@ class Consultor:
             terms,
             best,
             reason,
+            name_match,
         )
 
     @staticmethod
