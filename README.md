@@ -5,7 +5,10 @@
 
 Consultor **offline** de APIs Python y documentación local. Indexa docstrings y
 ficheros (`.txt`, `.md`, `.rst`, `.zip`) en SQLite y responde con un LLM local vía
-[Ollama](https://ollama.com) (`qwen3:8b` + `bge-m3`), citando las fuentes.
+[Ollama](https://ollama.com) (`qwen3:8b` + `bge-m3`), citando las fuentes. Prefiere
+abstenerse a inventar: no responde sobre símbolos que no existen y, con un umbral
+calibrado (`api eval`), tampoco cuando lo recuperado está lejos de la pregunta.
+Las preguntas en español se traducen para buscar en docstrings en inglés.
 
 ## Instalación
 
@@ -16,7 +19,9 @@ uv tool install api-consultor
 api setup        # descarga los modelos y ofrece indexar la biblioteca estándar
 ```
 
-Actualizar: `uv tool upgrade api-consultor` (y `api setup` si cambió el `Modelfile`).
+Actualizar: `uv tool upgrade api-consultor` y, si el
+[CHANGELOG](https://github.com/isidro-rodriguez/api-consultor/blob/main/CHANGELOG.md)
+lo indica, `api setup` (nuevo `Modelfile`) o reindexar.
 
 ## Uso
 
@@ -27,6 +32,8 @@ api index --stdlib                # biblioteca estándar
 api index-docs [CARPETA]          # documentación local
 api ask                           # entra en chat interactivo
 api ask -s requests "..."         # pregunta solo sobre una fuente (repetible)
+api ask -d "..."                  # --debug: traducción, candidatos y distancias
+api eval evals/stdlib.toml        # mide la recuperación y la abstención
 api sources                       # qué hay indexado (--update, --remove, --relocate)
 ```
 
@@ -40,7 +47,7 @@ crear un `config.toml` comentado. Solo hace falta indicar lo que cambies:
 ```toml
 [models]      # chat, embed, embed_dim
 [paths]       # db, docs
-[retrieval]   # k, candidates, max_per_symbol, max_distance
+[retrieval]   # k, candidates, max_per_symbol, max_distance, translate
 [display]     # width
 [links]       # url, p. ej. "vscode://file/{path}:{line}"
 ```
@@ -53,8 +60,8 @@ crear un `config.toml` comentado. Solo hace falta indicar lo que cambies:
   editores, `Modelfile`.
 - [Cómo funciona](https://github.com/isidro-rodriguez/api-consultor/blob/main/docs/funcionamiento.md): indexado, recuperación híbrida, citas,
   integridad del índice y limitaciones.
-- [Evaluar la recuperación](https://github.com/isidro-rodriguez/api-consultor/blob/main/docs/evaluacion.md): `api eval`, métricas y formato de los
-  casos.
+- [Evaluar la recuperación](https://github.com/isidro-rodriguez/api-consultor/blob/main/docs/evaluacion.md): `api eval`, métricas, abstención y
+  formato de los casos.
 - [Desarrollo](https://github.com/isidro-rodriguez/api-consultor/blob/main/docs/desarrollo.md): calidad, CI y publicación en PyPI.
 
 ## Desarrollo

@@ -1,6 +1,6 @@
 [project]
 name = "api-consultor"
-version = "0.4.0"
+version = "0.5.0"
 description = "Consultor de APIs Python offline con Ollama y RAG"
 readme = "README.md"
 requires-python = ">=3.12"

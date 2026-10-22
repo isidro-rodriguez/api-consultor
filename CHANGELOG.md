@@ -7,66 +7,74 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
-### Corregido
+## [0.5.0] - 2026-10-22
 
-- Un objeto importado en otro módulo del mismo paquete se indexaba con el nombre del
-  primero que lo importaba, por orden alfabético (`rich.bar.Console` en vez de
-  `rich.console.Console`), y no se encontraba por su nombre real. Ahora gana el alias
-  de la raíz del paquete y, si no, el módulo que lo define. Reindexa los paquetes
-  afectados (`api index rich`, o con `-p` el de su entorno).
-- Un subpaquete cuyo `__init__` hace `raise SystemExit` abortaba todo el indexado
-  (`pkgutil.walk_packages` no lo captura); ahora se omite con un aviso.
-- La sonda de `--python` ya no puede quedarse colgada: se cancela a los 10 minutos y
-  recibe la entrada estándar vacía (un `input()` al importar no la bloquea).
-- `api index-docs` con una carpeta `foo/` y un `foo.zip` (o una carpeta `docs/` y
-  ficheros sueltos) sustituía una fuente por otra en silencio; ahora da un error.
-- Un `.zip` dañado de `api index-docs` da un error legible en vez de una traza.
-- `api ask` o `api sources` durante un `api index` en marcha podían fallar con
-  «database is locked»: abrir el índice ya no escribe si no hay nada que cambiar, el
-  índice usa modo WAL (lectores y escritor no se bloquean) y la espera máxima por un
-  cerrojo sube a 30 s.
+Versión centrada en la fiabilidad: no responder cuando no hay base, buscar mejor con
+preguntas en español y blindar el indexado.
+
+**Al actualizar desde 0.4:** ejecuta `api setup` (nuevo `Modelfile`) y reindexa los
+paquetes de terceros (`api index rich …`, con `-p` los de otros entornos) para que
+sus símbolos tomen su nombre real. El índice se migra solo al formato 6, sin
+recalcular embeddings. Para calibrar `max_distance`, añade preguntas sin respuesta a
+tus casos y usa el umbral que sugiere `api eval`.
 
 ### Añadido
 
-- Las preguntas en español sin nombres de símbolos se traducen al inglés con el modelo
-  de chat antes de buscar (los docstrings están en inglés): se busca con ambas
-  versiones y se responde a la original. `[retrieval] translate = false` lo desactiva;
+- **Traducción de la pregunta.** Las preguntas en español sin nombres de símbolos se
+  traducen al inglés con el modelo de chat antes de buscar (los docstrings están en
+  inglés): se busca con ambas versiones y se responde a la original. Si el modelo no
+  traduce, se descarta. `[retrieval] translate = false` lo desactiva y
   `api ask --debug` muestra la traducción.
-- `api ask` no responde si la pregunta nombra un símbolo cualificado que no existe
-  (`pathlib.Path.teleport`, `json.compress`) y su dueño sí está indexado, aunque no
-  haya `max_distance`; antes respondía con el símbolo más parecido.
-- `api eval` mide la abstención: las preguntas con `expected = []` (sin respuesta en
-  el índice) cuentan respuestas falsas y perdidas con el `max_distance` actual y se
-  sugiere el umbral que mejor separa ambos grupos (callar una pregunta cuya fuente no
-  se recuperó no cuenta como respuesta perdida). `evals/stdlib.toml` trae seis.
-- Límites de tamaño en `api index-docs` (20 MiB por fichero, 512 MiB y 20 000
+- **Abstención ante símbolos inexistentes.** `api ask` no responde si la pregunta
+  nombra un símbolo cualificado que no existe (`pathlib.Path.teleport`,
+  `json.compress`) y su dueño sí está indexado, aunque no haya `max_distance`.
+- **Abstención en `api eval`.** Las preguntas con `expected = []` (sin respuesta en el
+  índice) miden las respuestas falsas y las perdidas con el `max_distance` actual, y
+  se sugiere el umbral que mejor separa ambos grupos. `evals/stdlib.toml` incluye
+  seis.
+- Límites de tamaño en `api index-docs` (20 MiB por fichero; 512 MiB y 20 000
   ficheros por fuente) contra bombas zip y carpetas equivocadas.
+- El CI se puede lanzar a mano (`workflow_dispatch`).
 
 ### Cambiado
 
-- Formato de índice 6: la búsqueda por palabras reduce las palabras inglesas a su raíz
-  (`replace` encuentra `replacing`). Un índice anterior se migra solo al abrirlo
-  (rehace el índice de palabras; los embeddings no cambian).
-- La traducción de la pregunta lleva ejemplos y se descarta si el modelo responde en
-  español (antes «Convertir un diccionario…» volvía sin traducir).
-- Respuestas más desarrolladas: el `Modelfile` pide explicación (parámetros, valores
-  por defecto, retorno, excepciones) y un ejemplo completo y ejecutable en las
-  preguntas de uso, con un tope de 2048 tokens (`num_predict`). Ejecuta `api setup`.
-- El modo interactivo de `api ask` indica que cada pregunta se responde por separado
-  (nunca se envía el historial; ahora lo cubre un test).
+- **Respuestas más desarrolladas.** El `Modelfile` pide respuesta directa,
+  explicación (parámetros, valores por defecto, retorno, excepciones), un ejemplo
+  completo y ejecutable en las preguntas de uso y notas respaldadas por la
+  documentación, con un tope de 2048 tokens (`num_predict`).
+- **Datos e instrucciones separados.** El mensaje al modelo lleva los fragmentos en
+  `<docs>`, la pregunta en `<question>` (con sus etiquetas escapadas) y las reglas al
+  final. El `Modelfile` trata la documentación recuperada como datos no confiables.
+- **Formato de índice 6.** La búsqueda por palabras reduce las palabras inglesas a su
+  raíz (`replace` encuentra `replacing`). Un índice anterior se migra solo al abrirlo.
 - Una palabra corriente («tree», «directory») ya no cuenta como nombre corto de un
-  símbolo salvo que parezca un identificador o sea rara en el índice: antes ponía
-  `rich.tree.Tree` por delante de `shutil.copytree`.
+  símbolo salvo que parezca un identificador o aparezca en pocos fragmentos: antes
+  ponía `rich.tree.Tree` por delante de `shutil.copytree`.
 - `api eval` mide Recall@k y MRR sin aplicar `max_distance` (antes una abstención
   contaba como fallo de recuperación) y solo con las preguntas que tienen respuesta.
-- El mensaje al modelo separa datos e instrucciones: fragmentos en `<docs>`, pregunta
-  en `<question>` (con sus etiquetas escapadas) y reglas al final. El `Modelfile`
-  trata la documentación recuperada como datos no confiables: ejecuta `api setup`
-  para recrear el modelo `api-consultor`.
-- El CI se puede lanzar a mano (`workflow_dispatch`) y `docs/desarrollo.md` pide
-  verlo en verde en `main` antes de etiquetar.
+- El modo interactivo de `api ask` indica que cada pregunta se responde por separado:
+  nunca se envía el historial.
+- `docs/desarrollo.md` pide ver el CI de `main` en verde antes de etiquetar.
 - La documentación advierte de que indexar un paquete ejecuta su código y de qué API
   dinámica no se ve.
+
+### Corregido
+
+- Un objeto importado en otro módulo del mismo paquete se indexaba con el nombre del
+  primer módulo que lo importaba (`rich.bar.Console` en vez de
+  `rich.console.Console`) y no se encontraba por su nombre real. Ahora gana el alias
+  de la raíz del paquete y, si no, el módulo que lo define.
+- Un subpaquete cuyo `__init__` hace `raise SystemExit` abortaba todo el indexado;
+  ahora se omite con un aviso.
+- La sonda de `--python` ya no puede quedarse colgada: se cancela a los 10 minutos y
+  recibe la entrada estándar vacía.
+- `api ask` o `api sources` durante un `api index` en marcha podían fallar con
+  «database is locked»: abrir el índice ya no escribe si no hay cambios, el índice usa
+  modo WAL y la espera máxima por un cerrojo sube a 30 s.
+- `api index-docs` con una carpeta `foo/` y un `foo.zip` (o una carpeta `docs/` y
+  ficheros sueltos) sustituía una fuente por otra en silencio; ahora da un error.
+- Un `.zip` dañado en `api index-docs` da un error legible en vez de una traza.
+- El CHANGELOG de 0.4.0 tenía la sección «Añadido» duplicada.
 
 ## [0.4.0] - 2026-10-22
 

@@ -79,3 +79,11 @@ url = "vscode://file/{path}:{line}"        # VS Code
 El prompt de sistema y los parámetros del modelo (contexto, temperatura…) están en
 `src/api_consultor/Modelfile`, que se incluye en el paquete. Tras modificarlo (o tras
 actualizar a una versión que lo cambie), recrea el modelo con `api setup`.
+
+Valores actuales: `qwen3:8b`, contexto de 8192 tokens (`num_ctx`), respuesta de hasta
+2048 tokens (`num_predict`), temperatura 0,15. El prompt fija el formato de la
+respuesta (directa, explicación, ejemplo ejecutable en preguntas de uso, notas) y
+trata la documentación recuperada como datos, nunca como instrucciones.
+
+La traducción de preguntas (`[retrieval] translate`) usa este mismo modelo con otras
+instrucciones, de modo que no carga ningún modelo adicional en la GPU.
