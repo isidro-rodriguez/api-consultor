@@ -16,6 +16,15 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 - Si un paquete no está en el entorno de la herramienta pero sí en el venv activo o en
   `./.venv`, el aviso sugiere el comando exacto (`api index X -p .venv`).
 
+### Añadido
+
+- `api ask --source/-s FUENTE` (repetible) limita la búsqueda a esas fuentes; acepta
+  el nombre de la fuente, el del paquete (todas sus fuentes) o `stdlib`.
+- Caché de embeddings: al reindexar (`api sources -u`, `api index`, `api index-docs`)
+  solo se calculan los fragmentos nuevos o cambiados; el resto reutiliza su vector.
+- Si un paquete no está en el entorno de la herramienta pero sí en el venv activo o en
+  `./.venv`, el aviso sugiere el comando exacto (`api index X -p .venv`).
+
 ### Cambiado
 
 - Formato de índice 5 (`chunks.hash`, `sources.module`); un índice anterior se migra
