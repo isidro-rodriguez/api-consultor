@@ -2,12 +2,27 @@
 
 [← README](../README.md)
 
-```text
-paquetes instalados / documentación ──► fragmentos ──► embeddings (bge-m3) ──► SQLite + sqlite-vec
-                                                                             │
-pregunta ──► nombres + palabras (FTS5) + vectorial ──► fusión RRF ◄──────────┘
-                     │
-                     └──► Qwen3 8B (Ollama) ──► respuesta en Markdown + fuentes
+```mermaid
+flowchart TD
+    subgraph Indexado
+        P["Paquetes instalados"] --> F["Fragmentos"]
+        D["Documentación<br/>txt · md · rst · zip"] --> F
+        F --> E["Embeddings<br/>bge-m3"]
+        E --> DB[("SQLite<br/>sqlite-vec + FTS5")]
+    end
+    subgraph Consulta
+        Q["Pregunta"] --> N["Nombres"]
+        Q --> L["Palabras · BM25"]
+        Q --> V["Similitud vectorial"]
+        N --> R["Fusión RRF"]
+        L --> R
+        V --> R
+        R --> M["Qwen3 8B · Ollama"]
+        M --> A["Respuesta en Markdown<br/>+ fuentes citadas"]
+    end
+    DB -.-> N
+    DB -.-> L
+    DB -.-> V
 ```
 
 Todo ocurre en tu máquina: Ollama sirve los modelos y el índice es un único fichero
@@ -30,7 +45,7 @@ SQLite con las extensiones `sqlite-vec` (vectores) y FTS5 (texto completo).
 Cada pregunta se busca por cuatro vías, cada una con su peso:
 
 | Señal | Qué busca | Peso |
-|---|---|---|
+| --- | --- | --- |
 | N | nombres cualificados escritos en la pregunta (`json.dumps`) | 3,0 |
 | S | nombres cortos (`dumps`) | 1,5 |
 | L | palabras del contenido (BM25 sobre FTS5) | 1,0 |

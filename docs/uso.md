@@ -95,7 +95,7 @@ api sources --relocate notas D:/docs/notas   # la carpeta de una fuente cambió 
 Estados de cada fuente:
 
 | Estado | Significado | Qué hacer |
-|---|---|---|
+| --- | --- | --- |
 | al día | versión indexada = instalada | nada |
 | obsoleta | el paquete cambió de versión | `api sources -u` |
 | no encontrada | se borró el venv o se movió la carpeta | reinstalar, `--relocate` o `--remove` |

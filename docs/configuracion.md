@@ -10,7 +10,7 @@ una plantilla comentada.
 ## Ubicación de los ficheros
 
 | | Windows | Linux | macOS |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `config.toml` | `%APPDATA%\api-consultor` | `~/.config/api-consultor` (o `$XDG_CONFIG_HOME`) | `~/Library/Application Support/api-consultor` |
 | Datos (índice, `docs/`, `docs-cache/`) | `%LOCALAPPDATA%\api-consultor` | `~/.local/share/api-consultor` (o `$XDG_DATA_HOME`) | `~/Library/Application Support/api-consultor` |
 
@@ -58,7 +58,7 @@ que se abre con la aplicación que tu sistema asocie al tipo de fichero. Para us
 editor concreto, define una plantilla con estos campos:
 
 | Campo | Contenido |
-|---|---|
+| --- | --- |
 | `{file}` | ruta del fichero tal cual |
 | `{path}` | ruta con `/` y codificada para URL |
 | `{uri}` | URI `file://` (por defecto) |
