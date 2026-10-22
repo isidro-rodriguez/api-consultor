@@ -63,7 +63,7 @@ Cada pregunta se busca por cuatro vías, cada una con su peso:
 | Señal | Qué busca | Peso |
 | --- | --- | --- |
 | N | nombres cualificados escritos en la pregunta (`json.dumps`) | 3,0 |
-| S | nombres cortos (`dumps`) | 1,5 |
+| S | nombres cortos (`dumps`, `most_common`) | 1,5 |
 | L | palabras del contenido (BM25 sobre FTS5) | 1,0 |
 | V | similitud semántica (distancia entre vectores) | 1,0 |
 
@@ -72,8 +72,19 @@ Los rankings se combinan con **Reciprocal Rank Fusion**: cada fragmento suma
 `max_per_symbol` fragmentos de un mismo símbolo, para que un docstring largo no ocupe
 todo el contexto, y se eligen los `k` mejores.
 
-`api ask --debug` muestra los candidatos con su puntuación, la posición en cada señal y
-la distancia vectorial.
+Una palabra corriente solo cuenta como nombre corto si parece un identificador
+(`most_common`, `getLogger`) o aparece en pocos fragmentos (25 como mucho): así «tree»
+no trae `rich.tree.Tree` cuando se pregunta por copiar un árbol de directorios.
+
+**Preguntas en español.** Los docstrings suelen estar en inglés, y entonces ni las
+palabras (L) ni los vectores (V) encuentran bien una pregunta en español. Si la
+pregunta está en español y no nombra ningún símbolo, el modelo de chat la traduce al
+inglés (una línea, sin razonar) y se busca con ambas versiones: L con las palabras de
+las dos y V con la menor distancia de las dos. El modelo responde a la pregunta
+original. Se desactiva con `[retrieval] translate = false`.
+
+`api ask --debug` muestra la traducción, los candidatos con su puntuación, la posición
+en cada señal y la distancia vectorial.
 
 ### Abstención
 

@@ -90,7 +90,7 @@ expected = ["pathlib.Path.rglob|library/pathlib.txt#*"]
 [[case]]
 category = "descripcion"
 question = "copiar un directorio completo con todo su contenido"
-expected = ["shutil.copytree|library/shutil.txt#*|library/pathlib.txt#Copying*"]
+expected = ["shutil.copytree|pathlib.Path.copy|library/shutil.txt#*|library/pathlib.txt#Copying*"]
 
 [[case]]
 category = "descripcion"

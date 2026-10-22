@@ -194,7 +194,7 @@ def test_data_that_looks_like_markup_is_printed_literally(capture: Capture) -> N
     buffer = capture(160)
     chunk = Chunk(TRICKY, "[red]pkg", "[1]", "x")
     candidate = Candidate(chunk, 0.5, {"N": 1}, 0.1, selected=True)
-    render.show_debug(Retrieval([chunk], [candidate]), 10)
+    render.show_debug(Retrieval([chunk], [candidate], translation=TRICKY), 10)
     render.show_sources_table([SourceInfo("[red]pkg", "[1]", 1)], "T")
     state = VersionStatus(SourceInfo("[red]pkg", "[1]", 1, "docs", ""), "[x]", "docs")
     render.show_status_table([state], "T")

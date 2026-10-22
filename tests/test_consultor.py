@@ -9,6 +9,7 @@ from api_consultor.citations import INSTRUCTION
 from api_consultor.config import SETTINGS
 from api_consultor.consultor import (
     _IDENTIFIER,
+    SHORT_NAME_MAX_DOCS,
     Candidate,
     Consultor,
     Retrieval,
@@ -16,9 +17,11 @@ from api_consultor.consultor import (
     _fuse,
     _fuse_detailed,
     _lexical_query,
+    _needs_translation,
     _terms,
     build_prompt,
     format_context,
+    translate,
 )
 from api_consultor.evaluation import Hits
 from api_consultor.models import modelfile
@@ -372,3 +375,96 @@ def test_unknown_names_respect_the_source_filter(
         assert Consultor(store, {"mod"}).search("mod.secreto").unknown == [
             "mod.secreto"
         ]
+
+
+@pytest.mark.parametrize(
+    ("question", "names", "expected"),
+    [
+        ("copiar un directorio completo", [], True),
+        ("¿ruta absoluta?", [], True),
+        ("¿Qué devuelve Path.rglob?", ["Path.rglob"], False),  # el nombre basta
+        ("copy a directory tree recursively", [], False),
+    ],
+)
+def test_only_spanish_questions_without_names_are_translated(
+    question: str, names: list[str], expected: bool
+) -> None:
+    assert _needs_translation(question, names) is expected
+
+
+def test_translation_can_be_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(SETTINGS, "translate", False)
+    assert not _needs_translation("copiar un directorio", [])
+
+
+@pytest.mark.parametrize(
+    ("answer", "expected"),
+    [
+        ('"Copy a directory tree"\nNota: traducido.', "Copy a directory tree"),
+        ("", None),
+        ("  copiar un directorio  ", None),  # repite la pregunta
+    ],
+)
+def test_translate_keeps_the_first_line(
+    stub_ollama: StubOllama, answer: str, expected: str | None
+) -> None:
+    stub_ollama.translation = answer
+    assert translate("copiar un directorio") == expected
+
+
+@pytest.fixture
+def english(tmp_path: Path, stub_ollama: StubOllama) -> Generator[Consultor]:
+    chunks = [
+        Chunk("fs.copytree", "fs", "1", "Recursively copy a directory tree."),
+        Chunk("ui.Tree", "ui", "1", "A widget."),
+        *(
+            Chunk(f"ui.node{i}", "ui", "1", f"Node {i} of a tree widget.")
+            for i in range(SHORT_NAME_MAX_DOCS + 1)
+        ),
+        Chunk("cfg.most_common", "cfg", "1", "Most common settings."),
+    ]
+    with Store(tmp_path / "e.db", EMBED_DIM) as store:
+        for package in ("fs", "ui", "cfg"):
+            own = [c for c in chunks if c.package == package]
+            store.replace(package, own, fake_embed([c.content for c in own]))
+        yield Consultor(store)
+
+
+def test_spanish_questions_search_with_the_english_translation(
+    english: Consultor, stub_ollama: StubOllama
+) -> None:
+    stub_ollama.translation = "copy a directory tree recursively"
+    retrieval = english.search("copiar un directorio completo")
+    assert stub_ollama.translated == ["copiar un directorio completo"]
+    assert retrieval.translation == "copy a directory tree recursively"
+    top = next(c for c in retrieval.candidates if c.chunk.qualname == "fs.copytree")
+    assert top.ranks["L"] == 1  # solo la traducción tiene palabras en común
+    assert retrieval.chunks[0].qualname == "fs.copytree"
+    # La pregunta original es la que recibe el modelo.
+    list(english.stream("copiar un directorio completo", retrieval.chunks))
+    assert "copiar un directorio completo" in stub_ollama.messages[0][0]["content"]
+
+
+def test_common_words_do_not_count_as_short_names(
+    english: Consultor, stub_ollama: StubOllama
+) -> None:
+    retrieval = english.search("copy a directory tree recursively")
+    assert stub_ollama.translated == []  # ya está en inglés
+    tree = next(c for c in retrieval.candidates if c.chunk.qualname == "ui.Tree")
+    assert "S" not in tree.ranks  # «tree» aparece en demasiados fragmentos
+    assert retrieval.chunks[0].qualname == "fs.copytree"
+
+
+def test_rare_or_identifier_like_terms_still_match_short_names(
+    english: Consultor,
+) -> None:
+    rare = english.search("copytree")
+    assert rare.candidates[0].chunk.qualname == "fs.copytree"
+    assert "S" in rare.candidates[0].ranks
+    snake = english.search("¿most_common?")
+    assert "S" in snake.candidates[0].ranks
+
+
+def test_frequent_terms_ignores_invalid_fts_terms(english: Consultor) -> None:
+    store = english._store
+    assert store.frequent_terms(["tree", "copytree", 'a"b'], 5) == {"tree"}

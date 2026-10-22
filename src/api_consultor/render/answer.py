@@ -147,6 +147,8 @@ def show_debug(retrieval: Retrieval, context_chars: int, limit: int = 15) -> Non
     summary.add_column(style=FG, overflow="fold")
     summary.add_row("Nombres", ", ".join(retrieval.names) or "—")
     summary.add_row("Términos", ", ".join(retrieval.terms) or "—")
+    if retrieval.translation is not None:
+        summary.add_row("Traducción", Text(retrieval.translation))
     best = retrieval.best_distance
     summary.add_row("Mejor distancia", "—" if best is None else f"{best:.3f}")
     threshold = SETTINGS.max_distance

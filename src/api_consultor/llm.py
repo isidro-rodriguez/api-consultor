@@ -45,3 +45,33 @@ def stream_chat(messages: list[dict[str, str]]) -> Iterator[str]:
     )
     for part in stream:
         yield part.message.content or ""
+
+
+def complete(system: str, prompt: str, max_tokens: int = 96) -> str:
+    """Pide al modelo de chat una respuesta corta y determinista, sin streaming.
+
+    El mensaje de sistema sustituye al del `Modelfile` para esta llamada.
+
+    Args:
+        system: Instrucciones de sistema para esta tarea.
+        prompt: Texto del usuario.
+        max_tokens: Máximo de tokens que puede generar.
+
+    Returns:
+        El texto de la respuesta (vacío si no hay).
+
+    Raises:
+        ConnectionError: Si no se puede contactar con Ollama.
+        ollama.ResponseError: Si Ollama rechaza la petición (p. ej. falta el modelo).
+    """
+    response = ollama.chat(
+        model=SETTINGS.chat_model,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt},
+        ],
+        stream=False,
+        think=False,
+        options={"temperature": 0, "num_predict": max_tokens},
+    )
+    return response.message.content or ""

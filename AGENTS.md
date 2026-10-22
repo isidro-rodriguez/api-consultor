@@ -35,11 +35,11 @@ declares terminada una tarea que no hayas ejecutado.
 | `probe.py`      | Guion stdlib que corre con el Python de otro entorno (extrae chunks/versiones; JSON).           |
 | `docs.py`       | Lee `.txt`/`.md`/`.rst` (sueltos, carpetas, `.zip`) y los trocea por secciones.                 |
 | `store.py`      | SQLite + `sqlite-vec` + FTS5 + metadatos (`meta`, `sources`); valida modelo y dimensión.        |
-| `consultor.py`  | RAG: `retrieve()` (nombres + FTS5 + vectorial, fusión RRF) y `stream()` (`build_prompt`).       |
+| `consultor.py`  | RAG: `retrieve()` (traducción, nombres, FTS5, vectorial; RRF) y `stream()` (`build_prompt`).    |
 | `versions.py`   | Versión instalada (distribución ≠ módulo) y estado de cada fuente indexada.                     |
 | `userconfig.py` | `config.toml` del usuario (sobrescribe `Settings`, plantilla de enlaces) y `api config`.        |
 | `evaluation.py` | Recall@k, MRR, abstención (umbral sugerido) y carga de casos de `api eval`.                     |
-| `llm.py`        | Capa fina sobre el cliente de Ollama (`embed`, `stream_chat`).                                  |
+| `llm.py`        | Capa fina sobre el cliente de Ollama (`embed`, `stream_chat`, `complete`).                      |
 | `render/`       | Toda la salida de consola (ver abajo).                                                          |
 | `config.py`     | `Settings` inmutable (modelos, rutas, `retrieval_k`, `retrieval_candidates`, ancho de consola). |
 
@@ -72,8 +72,9 @@ leen `theme.console`/`theme.err_console` al ejecutarse: los tests las sustituyen
 
 - Cada cambio de comportamiento lleva tests; cada bug, un test de regresión.
 - Los tests corren en un directorio temporal (fixture `isolated_cwd`) y **nunca**
-  usan Ollama real (fixtures `stub_ollama` y `block_real_ollama`). Embeddings
-  sintéticos con `hash_embedding`. Paquetes de prueba con `make_package`.
+  usan Ollama real (fixtures `stub_ollama`, que también simula la traducción, y
+  `block_real_ollama`). Embeddings sintéticos con `hash_embedding`. Paquetes de
+  prueba con `make_package`.
 - Si una prueba necesita el modelo real, no es un test unitario: documéntalo aparte.
 - Calidad de recuperación: `tests/test_benchmark.py` (corpus sintético, suelos de
   no regresión) y `api eval` (índice y embeddings reales, lo ejecuta el usuario). Un

@@ -626,6 +626,30 @@ class Store:
                 found.extend(Chunk(*row) for row in rows)
         return found
 
+    def frequent_terms(self, terms: Iterable[str], limit: int) -> set[str]:
+        """Términos que aparecen en más de `limit` fragmentos (palabras comunes).
+
+        Args:
+            terms: Palabras a comprobar.
+            limit: Máximo de fragmentos para no considerarla común.
+
+        Returns:
+            Las que superan el límite.
+        """
+        frequent: set[str] = set()
+        for term in dict.fromkeys(terms):
+            try:
+                (count,) = self._db.execute(
+                    "SELECT count(*) FROM (SELECT 1 FROM chunks_fts "
+                    "WHERE chunks_fts MATCH ? LIMIT ?)",
+                    (f'"{term}"', limit + 1),
+                ).fetchone()
+            except sqlite3.OperationalError:  # término no válido para FTS5
+                continue
+            if count > limit:
+                frequent.add(term)
+        return frequent
+
     def mentions(
         self,
         owners: Iterable[str],

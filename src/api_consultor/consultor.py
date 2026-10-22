@@ -9,7 +9,7 @@ from html import escape
 from .citations import INSTRUCTION, doc_id
 from .config import SETTINGS
 from .evaluation import Hits
-from .llm import embed, stream_chat
+from .llm import complete, embed, stream_chat
 from .store import Chunk, Store
 
 # Nombres tipo `pathlib.Path.rglob` o `snake_case` dentro de la pregunta.
@@ -44,6 +44,56 @@ def _terms(question: str) -> list[str]:
     """Palabras significativas de la pregunta, en minúsculas y sin repetir."""
     words = (word.lower() for word in _WORD.findall(question))
     return list(dict.fromkeys(word for word in words if word not in _STOPWORDS))
+
+
+SHORT_NAME_MAX_DOCS = 25
+"""Fragmentos en que puede aparecer una palabra para contar como nombre corto."""
+
+_SPANISH = re.compile(
+    r"[áéíóúñ¿¡]|\b(?:que|qué|cómo|como|para|por|con|del|los|las|una|un|el|la|de|en|"
+    r"y|o|se|es|mi|su|al|lo|desde|hasta|sobre)\b",
+    re.IGNORECASE,
+)
+
+TRANSLATE_SYSTEM = (
+    "You translate programming questions into English for a documentation search "
+    "engine. Reply with the English translation only, in one line, keeping code "
+    "identifiers unchanged. Do not answer the question."
+)
+"""Instrucciones del modelo para traducir la pregunta (sustituyen al `Modelfile`)."""
+
+
+def _looks_like_identifier(term: str) -> bool:
+    """`most_common`, `getLogger` o `utf8` no son palabras corrientes."""
+    return "_" in term or any(c.isdigit() for c in term) or term != term.lower()
+
+
+def _needs_translation(question: str, names: Sequence[str]) -> bool:
+    """Pregunta en español sin nombres cualificados (que ya bastan para buscar)."""
+    return SETTINGS.translate and not names and bool(_SPANISH.search(question))
+
+
+def translate(question: str) -> str | None:
+    """Traduce la pregunta al inglés con el modelo de chat, para buscar mejor.
+
+    Los docstrings suelen estar en inglés: en español ni las palabras (FTS5) ni los
+    embeddings los encuentran bien.
+
+    Args:
+        question: Pregunta del usuario.
+
+    Returns:
+        La traducción (una línea), o `None` si el modelo no devuelve nada útil o
+        repite la pregunta.
+
+    Raises:
+        ConnectionError: Si no se puede contactar con Ollama.
+    """
+    lines = complete(TRANSLATE_SYSTEM, question).strip().splitlines()
+    text = lines[0].strip().strip('"') if lines else ""
+    if not text or text.casefold() == question.strip().casefold():
+        return None
+    return text[:300]
 
 
 def _lexical_query(question: str) -> str | None:
@@ -151,6 +201,7 @@ class Retrieval:
         name_match: Si algún símbolo coincide por nombre (entonces nunca se abstiene).
         unknown: Nombres cualificados de la pregunta que no existen en el índice
             aunque su dueño sí (`json.compress`): con ellos siempre se abstiene.
+        translation: Versión en inglés usada para buscar, si se tradujo.
     """
 
     chunks: list[Chunk]
@@ -161,6 +212,7 @@ class Retrieval:
     abstain_reason: str | None = None
     name_match: bool = False
     unknown: list[str] = field(default_factory=list)
+    translation: str | None = None
 
     def hits(self) -> Hits:
         """Lo elegido sin aplicar la abstención, con su distancia (para `api eval`).
@@ -282,12 +334,16 @@ class Consultor:
         pool = max(SETTINGS.retrieval_candidates, limit)
         names = _IDENTIFIER.findall(question)
         terms = _terms(question)
-        query = _lexical_query(question)
         only = self._sources
+        translation = (
+            translate(question) if _needs_translation(question, names) else None
+        )
         qualified = self._store.by_name(names, limit_per_name=3, sources=only)
-        short = self._store.by_short_name(terms, sources=only)
+        short = self._store.by_short_name(self._name_like(terms), sources=only)
+        query = _lexical_query(f"{question} {translation or ''}")
         lexical = [] if query is None else self._store.lexical(query, pool, only)
-        scored = self._store.search_scored(embed([question])[0], pool, only)
+        texts = [question] if translation is None else [question, translation]
+        scored = self._nearest(embed(texts), pool)
         distances = {(c.package, c.qualname): d for c, d in scored}
         fused = _fuse_detailed(
             [
@@ -328,7 +384,33 @@ class Consultor:
             reason,
             name_match,
             unknown,
+            translation,
         )
+
+    def _name_like(self, terms: Sequence[str]) -> list[str]:
+        """Términos que pueden ser el nombre corto de un símbolo (`rglob`, `copytree`).
+
+        Las palabras comunes del índice («tree», «directory») coinciden con símbolos
+        por casualidad (`rich.tree.Tree`) y desplazarían a lo relevante: solo cuentan
+        si parecen identificadores (`most_common`) o son raras en la documentación.
+        """
+        candidates = [t for t in terms if not _looks_like_identifier(t)]
+        common = self._store.frequent_terms(candidates, SHORT_NAME_MAX_DOCS)
+        return [term for term in terms if term not in common]
+
+    def _nearest(
+        self, vectors: Sequence[Sequence[float]], pool: int
+    ) -> list[tuple[Chunk, float]]:
+        """Vecinos de una o varias versiones de la pregunta, con su menor distancia."""
+        best: dict[tuple[str, str], tuple[Chunk, float]] = {}
+        for vector in vectors:
+            for chunk, distance in self._store.search_scored(
+                vector, pool, self._sources
+            ):
+                key = (chunk.package, chunk.qualname)
+                if key not in best or distance < best[key][1]:
+                    best[key] = (chunk, distance)
+        return sorted(best.values(), key=lambda item: item[1])[:pool]
 
     def _unknown_names(self, names: Sequence[str], found: Sequence[Chunk]) -> list[str]:
         """Nombres cualificados que no están en el índice aunque su dueño sí.

@@ -40,10 +40,16 @@ class StubOllama:
     def __init__(self) -> None:
         self.tokens: list[str] = ["Respuesta ", "de prueba."]
         self.messages: list[list[dict[str, str]]] = []
+        self.translation = ""  # vacío: la traducción no aporta nada
+        self.translated: list[str] = []
 
     def stream_chat(self, messages: list[dict[str, str]]) -> Iterator[str]:
         self.messages.append(messages)
         yield from self.tokens
+
+    def complete(self, _system: str, prompt: str, _max_tokens: int = 96) -> str:
+        self.translated.append(prompt)
+        return self.translation
 
 
 @pytest.fixture(autouse=True)
@@ -93,6 +99,7 @@ def stub_ollama(monkeypatch: pytest.MonkeyPatch) -> StubOllama:
     monkeypatch.setattr("api_consultor.cli.embed", fake_embed)
     monkeypatch.setattr("api_consultor.consultor.embed", fake_embed)
     monkeypatch.setattr("api_consultor.consultor.stream_chat", stub.stream_chat)
+    monkeypatch.setattr("api_consultor.consultor.complete", stub.complete)
     return stub
 
 

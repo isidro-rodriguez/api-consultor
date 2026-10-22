@@ -34,6 +34,7 @@ k = 5                      # fragmentos enviados al modelo
 candidates = 30            # candidatos por método antes de fusionar
 max_per_symbol = 2         # máximo de fragmentos de un mismo símbolo
 # max_distance = 0.6       # umbral de abstención; sin definir = desactivado
+translate = true           # traducir al inglés las preguntas en español para buscar
 
 [display]
 width = 90                 # ancho máximo de la salida
@@ -50,6 +51,8 @@ url = "{uri}"              # plantilla de enlace de las fuentes
   sin respuesta (`expected = []`) y usa el umbral que sugiere (ver
   [evaluacion.md](evaluacion.md#abstención)). `api ask --debug` muestra la distancia
   de una pregunta concreta.
+- `translate` añade una llamada corta al LLM (1–2 s) en las preguntas en español sin
+  nombres de símbolos; ponlo a `false` si toda tu documentación está en español.
 - Subir `k` da más contexto al modelo a costa de memoria y velocidad; con 8 GB de VRAM
   y contexto de 8k tokens, 5 fragmentos de ~2000 caracteres es un buen equilibrio.
 

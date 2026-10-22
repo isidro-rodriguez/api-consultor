@@ -111,6 +111,7 @@ def test_integers_are_accepted_where_floats_are_expected(
         ('[retrieval]\nk = "3"\n', "de tipo int"),
         ("[retrieval]\nmax_distance = 0\n", "mayor que 0"),
         ('[retrieval]\nmax_distance = "x"\n', "de tipo float"),
+        ("[retrieval]\ntranslate = 1\n", "true o false"),
         ("[models]\nchat = 3\n", "texto no vacío"),
         ('[models]\nchat = " "\n', "texto no vacío"),
         ("[paths]\ndb = 1\n", "texto no vacío"),
@@ -223,3 +224,11 @@ def test_create_writes_a_loadable_template(isolated_user_config: Path) -> None:
 def test_paths_expand_the_home_directory(isolated_user_config: Path) -> None:
     write(isolated_user_config, '[paths]\ndb = "~/indice.db"\n')
     assert load().overrides["db_path"] == Path("~/indice.db").expanduser()
+
+
+def test_translate_can_be_disabled(isolated_user_config: Path) -> None:
+    write(isolated_user_config, "[retrieval]\ntranslate = false\n")
+    settings = Settings()
+    load().apply(settings)
+    assert settings.translate is False
+    assert "# translate = true" in template()

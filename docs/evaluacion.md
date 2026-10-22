@@ -3,8 +3,9 @@
 [← README](../README.md)
 
 `api eval` lanza preguntas de referencia contra el índice real y comprueba si las
-fuentes esperadas aparecen entre los primeros resultados. No llama al modelo de chat,
-pero sí a Ollama para los embeddings de las preguntas.
+fuentes esperadas aparecen entre los primeros resultados. Usa Ollama para los
+embeddings y, con `translate` activado, el modelo de chat para traducir las preguntas
+en español (no para responderlas).
 
 ```bash
 api eval evals/stdlib.toml          # muestra solo los casos que fallan

@@ -37,3 +37,31 @@ def test_stream_chat_disables_thinking_and_tolerates_empty_parts(
     assert calls[0]["think"] is False
     assert calls[0]["stream"] is True
     assert calls[0]["model"] == SETTINGS.chat_model
+
+
+def test_complete_replaces_the_system_prompt_and_is_deterministic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake(**kwargs: object) -> SimpleNamespace:
+        calls.append(kwargs)
+        return SimpleNamespace(message=SimpleNamespace(content="copy a tree"))
+
+    monkeypatch.setattr(llm.ollama, "chat", fake)
+    assert llm.complete("sistema", "copiar un árbol") == "copy a tree"
+    call = calls[0]
+    assert call["messages"] == [
+        {"role": "system", "content": "sistema"},
+        {"role": "user", "content": "copiar un árbol"},
+    ]
+    assert call["stream"] is False
+    assert call["think"] is False
+    assert call["options"] == {"temperature": 0, "num_predict": 96}
+
+    monkeypatch.setattr(
+        llm.ollama,
+        "chat",
+        lambda **_kw: SimpleNamespace(message=SimpleNamespace(content=None)),
+    )
+    assert llm.complete("s", "p") == ""

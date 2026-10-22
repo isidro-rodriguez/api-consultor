@@ -86,6 +86,13 @@ OPTIONS = (
         float,
         "Umbral de distancia para abstenerse (sin definir = desactivado).",
     ),
+    Option(
+        "retrieval",
+        "translate",
+        "translate",
+        bool,
+        "Traduce al inglés las preguntas en español para buscar (una llamada al LLM).",
+    ),
     Option("display", "width", "console_width", int, "Ancho máximo de la salida."),
 )
 """Opciones que admite `config.toml` (además de `[links] url`)."""
@@ -145,6 +152,10 @@ def _convert(option: Option, value: object, path: Path) -> object:
         if not isinstance(value, str) or not value.strip():
             raise UserConfigError(f"{where} debe ser un texto no vacío.")
         return Path(value).expanduser() if option.kind is Path else value
+    if option.kind is bool:
+        if not isinstance(value, bool):
+            raise UserConfigError(f"{where} debe ser true o false.")
+        return value
     if (
         isinstance(value, bool)
         or not isinstance(value, int | float)
@@ -316,6 +327,8 @@ def template() -> str:
 
 
 def _toml(value: object) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
     return f'"{value}"' if isinstance(value, str) else str(value)
 
 

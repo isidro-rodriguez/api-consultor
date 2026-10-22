@@ -62,6 +62,8 @@ class Settings:
         max_per_symbol: Máximo de fragmentos de un mismo símbolo en el contexto.
         max_distance: Distancia vectorial máxima para responder sin coincidencia de
             nombre; `None` desactiva el umbral.
+        translate: Si se traducen al inglés las preguntas en español sin nombres de
+            símbolos antes de buscar (los docstrings suelen estar en inglés).
         console_width: Ancho máximo de la salida en consola.
     """
 
@@ -73,7 +75,8 @@ class Settings:
     retrieval_k: int = 5
     retrieval_candidates: int = 30
     max_per_symbol: int = 2
-    max_distance: float | None = None  # calíbralo con `api ask --debug`
+    max_distance: float | None = None  # calíbralo con `api eval`
+    translate: bool = True
     console_width: int = 90
 
 

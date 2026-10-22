@@ -23,6 +23,10 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Añadido
 
+- Las preguntas en español sin nombres de símbolos se traducen al inglés con el modelo
+  de chat antes de buscar (los docstrings están en inglés): se busca con ambas
+  versiones y se responde a la original. `[retrieval] translate = false` lo desactiva;
+  `api ask --debug` muestra la traducción.
 - `api ask` no responde si la pregunta nombra un símbolo cualificado que no existe
   (`pathlib.Path.teleport`, `json.compress`) y su dueño sí está indexado, aunque no
   haya `max_distance`; antes respondía con el símbolo más parecido.
@@ -35,6 +39,9 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Cambiado
 
+- Una palabra corriente («tree», «directory») ya no cuenta como nombre corto de un
+  símbolo salvo que parezca un identificador o sea rara en el índice: antes ponía
+  `rich.tree.Tree` por delante de `shutil.copytree`.
 - `api eval` mide Recall@k y MRR sin aplicar `max_distance` (antes una abstención
   contaba como fallo de recuperación) y solo con las preguntas que tienen respuesta.
 - El mensaje al modelo separa datos e instrucciones: fragmentos en `<docs>`, pregunta
