@@ -120,6 +120,18 @@ def test_ask_interactive_mode(indexed: StubOllama) -> None:
     assert len(indexed.messages) == 1
 
 
+def test_interactive_questions_do_not_carry_previous_ones(indexed: StubOllama) -> None:
+    result = runner.invoke(
+        app, ["ask"], input="os.listdir\nos.listdir otra vez\nsalir\n"
+    )
+    assert result.exit_code == 0, result.output
+    assert "sin recordar" in " ".join(result.output.split())
+    first, second = indexed.messages
+    assert len(first) == len(second) == 1  # un solo mensaje: sin historial
+    assert "os.listdir otra vez" in second[0]["content"]
+    assert "Respuesta de prueba" not in second[0]["content"]
+
+
 def test_ask_blank_question_enters_interactive_mode(indexed: StubOllama) -> None:
     result = runner.invoke(app, ["ask", "   "], input="salir\n")
     assert "Modo interactivo" in result.output

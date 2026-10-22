@@ -92,8 +92,15 @@ api ask -s stdlib -s mis-notas "..."            # toda la stdlib y una carpeta d
 `-s/--source` acepta el nombre de una fuente (`api sources`), el de un paquete (todas
 sus fuentes, si está indexado desde varios entornos) o `stdlib`.
 
+Cada pregunta es independiente, también en modo interactivo: no se envían las
+preguntas ni las respuestas anteriores, solo la actual con su propio contexto. Así
+todo el contexto del modelo (8k tokens) queda para la documentación y la respuesta.
+
 La respuesta se genera **solo** con los fragmentos recuperados y los cita como
-`[DOC-01]`. Debajo aparece el panel «Fuentes»:
+`[DOC-01]`. Sigue un formato fijo: respuesta directa, explicación (parámetros,
+valores por defecto, retorno, excepciones), un ejemplo completo y ejecutable en las
+preguntas de uso y notas solo si la documentación las respalda; hasta ~2000 tokens.
+Debajo aparece el panel «Fuentes»:
 
 - ✔ marca los fragmentos citados; se avisa si el modelo cita ids inexistentes o no
   cita nada.

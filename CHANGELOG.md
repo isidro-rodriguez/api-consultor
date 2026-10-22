@@ -44,6 +44,11 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Cambiado
 
+- Respuestas más desarrolladas: el `Modelfile` pide explicación (parámetros, valores
+  por defecto, retorno, excepciones) y un ejemplo completo y ejecutable en las
+  preguntas de uso, con un tope de 2048 tokens (`num_predict`). Ejecuta `api setup`.
+- El modo interactivo de `api ask` indica que cada pregunta se responde por separado
+  (nunca se envía el historial; ahora lo cubre un test).
 - Una palabra corriente («tree», «directory») ya no cuenta como nombre corto de un
   símbolo salvo que parezca un identificador o sea rara en el índice: antes ponía
   `rich.tree.Tree` por delante de `shutil.copytree`.

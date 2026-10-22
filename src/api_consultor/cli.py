@@ -487,7 +487,8 @@ def index_docs_command(
 
 def _read_questions() -> Iterator[str]:
     print_hint(
-        'Modo interactivo: escribe tu pregunta ("salir" o Ctrl+D para terminar).'
+        "Modo interactivo: cada pregunta se responde por separado, sin recordar las "
+        'anteriores ("salir" o Ctrl+D para terminar).'
     )
     while (line := prompt()) is not None:
         if line in {"salir", "exit"}:
